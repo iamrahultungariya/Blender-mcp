@@ -1670,6 +1670,31 @@ def _look_via_script(args: dict) -> CallToolResult:
     return CallToolResult(content=[_png_content(png), TextContent(type="text", text=_look_caption(info))])
 
 
+@mcp.tool(meta={"ui": {"resourceUri": VIEWPORT_URI}})
+@telemetry_tool("inspect_asset")
+async def inspect_asset(
+    ctx: Context,
+    target: list[str] | None = None,
+    shading: str = "rendered",
+    max_size: int = 1024,
+    views: list[str] | None = None,
+) -> CallToolResult:
+    """Multi-angle 4-quadrant asset inspection.
+
+    Renders a 2x2 contact sheet showing the target asset from Front, Right (Side), Top, and Three-Quarter views
+    simultaneously in a single image. Eliminates occlusion blind spots and provides instant 360-degree evaluation.
+    """
+    angle_views = views or ["front", "right", "top", "three_quarter"]
+    return await look(
+        ctx=ctx,
+        mode="angles",
+        target=target,
+        views=angle_views,
+        shading=shading,
+        max_size=max_size,
+    )
+
+
 def _generation_send(command: str, params: dict):
     try:
         return get_blender_connection().send_command(command, params)

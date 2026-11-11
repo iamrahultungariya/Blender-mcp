@@ -15,3 +15,6 @@ except PackageNotFoundError:
 
 # Expose key classes and functions for easier imports
 from .server import BlenderConnection, get_blender_connection
+from . import bmesh_toolkit
+from . import vehicle_thinking
+from . import materials_preset

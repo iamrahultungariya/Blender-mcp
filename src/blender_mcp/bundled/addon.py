@@ -18,6 +18,7 @@ import shutil
 import uuid
 import zipfile
 import zlib
+import math, bmesh
 from bpy.props import IntProperty, BoolProperty
 import io
 from datetime import datetime
@@ -1269,6 +1270,305 @@ def _object_detail(obj):
     return detail
 
 
+# ------------------------------------------------------------------
+# Automotive Procedural Modeling & Vehicle Thinking Engine Toolkit
+# ------------------------------------------------------------------
+
+class BMeshToolkit:
+    """High-level parametric BMesh operations and automotive modifier stack."""
+
+    @staticmethod
+    def create_filleted_box(bm, min_v, max_v, bevel_radius=0.02, bevel_segments=2, material_index=0):
+        size_x = max_v[0] - min_v[0]
+        size_y = max_v[1] - min_v[1]
+        size_z = max_v[2] - min_v[2]
+        cx = (min_v[0] + max_v[0]) * 0.5
+        cy = (min_v[1] + max_v[1]) * 0.5
+        cz = (min_v[2] + max_v[2]) * 0.5
+
+        matrix = mathutils.Matrix.Translation((cx, cy, cz)) @ mathutils.Matrix.Diagonal((size_x, size_y, size_z, 1.0))
+        res = bmesh.ops.create_cube(bm, size=1.0, matrix=matrix)
+        verts = res["verts"]
+        faces = list({f for v in verts for f in v.link_faces})
+        for f in faces:
+            f.material_index = material_index
+            f.smooth = True
+
+        if bevel_radius > 0.001:
+            edges = list({e for v in verts for e in v.link_edges})
+            try:
+                bmesh.ops.bevel(
+                    bm,
+                    geom=edges,
+                    offset=bevel_radius,
+                    offset_type='OFFSET',
+                    segments=bevel_segments,
+                    profile=0.5,
+                    affect='EDGES'
+                )
+            except Exception:
+                pass
+        return {"verts": verts, "faces": faces}
+
+    @staticmethod
+    def create_cylinder(bm, p1, p2, radius=0.1, segments=24, material_index=0, cap_ends=True):
+        v1 = mathutils.Vector(p1)
+        v2 = mathutils.Vector(p2)
+        axis = v2 - v1
+        depth = axis.length
+        if depth < 1e-6:
+            depth = 0.001
+            axis = mathutils.Vector((0, 0, 1))
+
+        mid = (v1 + v2) * 0.5
+        rot = mathutils.Vector((0, 0, 1)).rotation_difference(axis)
+        mat = mathutils.Matrix.Translation(mid) @ rot.to_matrix().to_4x4()
+
+        res = bmesh.ops.create_cone(
+            bm,
+            cap_ends=cap_ends,
+            cap_tris=False,
+            segments=segments,
+            radius1=radius,
+            radius2=radius,
+            depth=depth,
+            matrix=mat
+        )
+        verts = res["verts"]
+        faces = list({f for v in verts for f in v.link_faces})
+        for f in faces:
+            f.material_index = material_index
+            f.smooth = True
+        return {"verts": verts, "faces": faces}
+
+    @staticmethod
+    def create_wheel_arch(bm, center, radius=0.45, width=0.15, lip_thickness=0.02, lip_outset=0.03, segments=16, axis="X", material_index=0):
+        cx, cy, cz = center
+        theta = np.linspace(0.0, np.pi, segments + 1)
+        verts_data = []
+        sign = 1.0 if (axis == "X" and cx >= 0) else -1.0
+        r_inner = radius
+        r_lip = radius + lip_thickness
+        r_outer = radius + lip_thickness + 0.04
+
+        for t in theta:
+            verts_data.append([float(cx), float(cy + r_inner * np.cos(t)), float(cz + r_inner * np.sin(t))])
+        for t in theta:
+            verts_data.append([float(cx + sign * lip_outset), float(cy + r_lip * np.cos(t)), float(cz + r_lip * np.sin(t))])
+        for t in theta:
+            verts_data.append([float(cx + sign * (lip_outset * 0.2)), float(cy + r_outer * np.cos(t)), float(cz + r_outer * np.sin(t))])
+
+        bm_verts = [bm.verts.new(v) for v in verts_data]
+        bm.verts.ensure_lookup_table()
+        n_pts = segments + 1
+        new_faces = []
+        for i in range(segments):
+            f1 = bm.faces.new([bm_verts[i], bm_verts[i + 1], bm_verts[i + 1 + n_pts], bm_verts[i + n_pts]])
+            f1.material_index = material_index
+            f1.smooth = True
+            new_faces.append(f1)
+            f2 = bm.faces.new([bm_verts[i + n_pts], bm_verts[i + 1 + n_pts], bm_verts[i + 1 + 2 * n_pts], bm_verts[i + 2 * n_pts]])
+            f2.material_index = material_index
+            f2.smooth = True
+            new_faces.append(f2)
+        return {"verts": bm_verts, "faces": new_faces}
+
+    @staticmethod
+    def create_curved_windshield(bm, bottom_center, top_center, width_bottom=1.8, width_top=1.6, curvature_depth=0.08, segments_u=8, segments_v=4, material_index=0):
+        bx, by, bz = bottom_center
+        tx, ty, tz = top_center
+        u_vals = np.linspace(-0.5, 0.5, segments_u + 1)
+        v_vals = np.linspace(0.0, 1.0, segments_v + 1)
+        verts_data = []
+        for v in v_vals:
+            cx = (1.0 - v) * bx + v * tx
+            cy = (1.0 - v) * by + v * ty
+            cz = (1.0 - v) * bz + v * tz
+            w = (1.0 - v) * width_bottom + v * width_top
+            for u in u_vals:
+                bow = (1.0 - 4.0 * (u ** 2)) * curvature_depth
+                verts_data.append([float(cx + u * w), float(cy + bow), float(cz)])
+
+        bm_verts = [bm.verts.new(v) for v in verts_data]
+        bm.verts.ensure_lookup_table()
+        faces = []
+        stride = segments_u + 1
+        for j in range(segments_v):
+            for i in range(segments_u):
+                v0 = j * stride + i
+                v1 = j * stride + (i + 1)
+                v2 = (j + 1) * stride + (i + 1)
+                v3 = (j + 1) * stride + i
+                f = bm.faces.new([bm_verts[v0], bm_verts[v1], bm_verts[v2], bm_verts[v3]])
+                f.material_index = material_index
+                f.smooth = True
+                faces.append(f)
+        return {"verts": bm_verts, "faces": faces}
+
+    @staticmethod
+    def apply_automotive_modifiers(obj, bevel_width=0.008, bevel_segments=2, weighted_normal=True, smooth_angle_deg=35.0):
+        if not obj or obj.type != 'MESH':
+            return {"status": "skipped"}
+        for poly in obj.data.polygons:
+            poly.use_smooth = True
+        bevel_mod = obj.modifiers.get("Auto_Bevel") or obj.modifiers.new("Auto_Bevel", "BEVEL")
+        bevel_mod.width = float(bevel_width)
+        bevel_mod.segments = int(bevel_segments)
+        bevel_mod.limit_method = 'ANGLE'
+        bevel_mod.angle_limit = math.radians(smooth_angle_deg)
+        bevel_mod.profile = 0.5
+        bevel_mod.harden_normals = True
+        if weighted_normal:
+            wn_mod = obj.modifiers.get("Auto_WeightedNormal") or obj.modifiers.new("Auto_WeightedNormal", "WEIGHTED_NORMAL")
+            wn_mod.keep_sharp = True
+            wn_mod.weight = 50
+        return {"status": "applied"}
+
+
+class VehicleThinkingEngine:
+    """Automotive design intelligence calculating form rules and curvature splines."""
+
+    ARCHETYPES = {
+        "AMBULANCE_VAN": {
+            "length": 5.92, "width": 2.05, "height": 2.75, "wheelbase": 3.66,
+            "front_overhang": 0.96, "rear_overhang": 1.30, "track_front": 1.72,
+            "track_rear": 1.73, "ground_clearance": 0.20, "tire_radius": 0.375,
+            "rim_radius": 0.215, "tire_width": 0.235,
+        }
+    }
+
+    CURVATURE_RULES = {
+        "AMBULANCE_VAN": {
+            "hood_rake_deg": 32.0, "hood_sagitta": 0.035, "windshield_rake_deg": 44.0,
+            "windshield_curvature_sagitta": 0.075, "tumblehome_deg": 6.5,
+            "roof_blister_height": 0.45, "roof_blister_rake_deg": 38.0,
+            "wheel_arch_clearance": 0.08, "fender_lip_outset": 0.028, "corner_fillet_radius": 0.085,
+        }
+    }
+
+    def get_archetype_proportions(self, vehicle_type="AMBULANCE_VAN"):
+        return dict(self.ARCHETYPES.get(vehicle_type.upper(), self.ARCHETYPES["AMBULANCE_VAN"]))
+
+    def get_aerodynamic_curvatures(self, vehicle_type="AMBULANCE_VAN"):
+        return dict(self.CURVATURE_RULES.get(vehicle_type.upper(), self.CURVATURE_RULES["AMBULANCE_VAN"]))
+
+    def generate_van_chassis_profile(self, length=5.92, width=2.05, height=2.75):
+        prop = self.get_archetype_proportions("AMBULANCE_VAN")
+        curv = self.get_aerodynamic_curvatures("AMBULANCE_VAN")
+        y_front_bumper = length * 0.5
+        y_cowl = y_front_bumper - prop["front_overhang"]
+        y_windshield_top = y_cowl - 0.85
+        y_rear_bumper = -length * 0.5
+        z_cowl = 1.22
+        z_windshield_top = 2.00
+        z_roof_high = height
+
+        hood_pts = [[0.0, float(y_cowl + (1.0 - t) * (y_front_bumper - 0.3 - y_cowl)), float(0.92 + t * (z_cowl - 0.92))] for t in np.linspace(0, 1, 6)]
+        windshield_pts = [[0.0, float((1.0 - t) * y_cowl + t * y_windshield_top), float((1.0 - t) * z_cowl + t * z_windshield_top)] for t in np.linspace(0, 1, 6)]
+        roof_pts = [[0.0, float((1.0 - t) * y_windshield_top + t * (y_windshield_top - 0.4)), float((1.0 - t) * z_windshield_top + t * z_roof_high)] for t in np.linspace(0, 1, 6)]
+        roof_pts.append([0.0, float(y_rear_bumper + 0.2), float(z_roof_high)])
+
+        y_front_wheel = y_cowl - 0.28
+        y_rear_wheel = y_front_wheel - prop["wheelbase"]
+
+        return {
+            "hood_spline": hood_pts,
+            "windshield_spline": windshield_pts,
+            "roof_spline": roof_pts,
+            "wheel_arches": {
+                "front_left": [width * 0.5, y_front_wheel, prop["tire_radius"]],
+                "front_right": [-width * 0.5, y_front_wheel, prop["tire_radius"]],
+                "rear_left": [width * 0.5, y_rear_wheel, prop["tire_radius"]],
+                "rear_right": [-width * 0.5, y_rear_wheel, prop["tire_radius"]],
+                "arch_radius": prop["tire_radius"] + curv["wheel_arch_clearance"],
+                "tire_radius": prop["tire_radius"],
+                "rim_radius": prop["rim_radius"],
+            },
+            "beltline_z": height * 0.52,
+            "tumblehome_deg": curv["tumblehome_deg"],
+        }
+
+
+class MaterialPresetVault:
+    """Automotive shader presets for EEVEE Next and Cycles."""
+
+    @staticmethod
+    def _apply_sockets(mat, values):
+        if not mat or not mat.node_tree:
+            return
+        bsdf = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        if not bsdf:
+            bsdf = mat.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
+        for socket_candidates, val in values.items():
+            for name in socket_candidates:
+                s = bsdf.inputs.get(name)
+                if s is not None:
+                    try:
+                        s.default_value = val
+                        break
+                    except Exception:
+                        pass
+
+    @classmethod
+    def setup_car_paint(cls, name="M_Car_Paint", color=(0.95, 0.95, 0.95, 1.0), clearcoat=1.0, roughness=0.12):
+        mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        mat.use_nodes = True
+        cls._apply_sockets(mat, {
+            ("Base Color",): color,
+            ("Roughness",): roughness,
+            ("Metallic",): 0.0,
+            ("Coat Weight", "Coat", "Clearcoat"): clearcoat,
+            ("Coat Roughness", "Clearcoat Roughness"): 0.03,
+            ("Specular IOR Level", "Specular"): 0.5,
+        })
+        return mat
+
+    @classmethod
+    def setup_plastic(cls, name="M_Textured_Plastic", color=(0.04, 0.04, 0.04, 1.0), roughness=0.75):
+        mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        mat.use_nodes = True
+        cls._apply_sockets(mat, {
+            ("Base Color",): color,
+            ("Roughness",): roughness,
+            ("Specular IOR Level", "Specular"): 0.25,
+        })
+        return mat
+
+    @classmethod
+    def setup_glass(cls, name="M_Automotive_Glass", color=(0.08, 0.10, 0.12, 1.0), transmission=0.88):
+        mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        mat.use_nodes = True
+        cls._apply_sockets(mat, {
+            ("Base Color",): color,
+            ("Roughness",): 0.02,
+            ("IOR",): 1.52,
+            ("Transmission Weight", "Transmission"): transmission,
+        })
+        return mat
+
+    @classmethod
+    def setup_emissive(cls, name="M_Emergency_Emissive", color=(1.0, 0.05, 0.05, 1.0), strength=40.0):
+        mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        mat.use_nodes = True
+        cls._apply_sockets(mat, {
+            ("Base Color",): color,
+            ("Emission Color", "Emission"): color,
+            ("Emission Strength",): strength,
+        })
+        return mat
+
+    @classmethod
+    def setup_tire(cls, name="M_Radial_Tire_Rubber", color=(0.025, 0.025, 0.025, 1.0), roughness=0.65):
+        mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        mat.use_nodes = True
+        cls._apply_sockets(mat, {
+            ("Base Color",): color,
+            ("Roughness",): roughness,
+            ("Specular IOR Level", "Specular"): 0.2,
+        })
+        return mat
+
+
 class BlenderMCPServer:
     def __init__(self, host='localhost', port=9876):
         self.host = host
@@ -1574,7 +1874,7 @@ class BlenderMCPServer:
                             try:
                                 cmd = json.loads(receiver_buffer.decode('utf-8'))
                                 receiver_buffer.clear()
-                                self.command_queue.put((cmd, client, False))
+                                self.command_queue.put((cmd, client))
                                 break
                             except (json.JSONDecodeError, UnicodeDecodeError):
                                 break
@@ -2429,8 +2729,18 @@ class BlenderMCPServer:
         """Execute arbitrary Blender Python code"""
         # This is powerful but potentially dangerous - use with caution
         try:
-            # Create a local namespace for execution
-            namespace = {"bpy": bpy}
+            # Create a local namespace for execution with automotive and BMesh toolkit helpers
+            namespace = {
+                "bpy": bpy,
+                "bmesh": bmesh,
+                "mathutils": mathutils,
+                "math": math,
+                "np": np,
+                "numpy": np,
+                "toolkit": BMeshToolkit(),
+                "thinking": VehicleThinkingEngine(),
+                "materials": MaterialPresetVault(),
+            }
 
             # Capture stdout during execution, and return it as result
             capture_buffer = io.StringIO()
