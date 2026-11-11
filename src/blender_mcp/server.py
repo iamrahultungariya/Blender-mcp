@@ -15,6 +15,13 @@ import time
 import base64
 import re
 
+from .protocol import (
+    encode_frame,
+    FrameReceiver,
+    send_framed_message,
+    receive_framed_message,
+)
+
 # Import telemetry
 from .telemetry import record_startup, get_telemetry, EventType
 from .telemetry_decorator import telemetry_tool, trajectory_tool
@@ -139,58 +146,55 @@ class BlenderConnection:
             finally:
                 self.sock = None
 
-    def receive_full_response(self, sock, buffer_size=8192):
-        """Receive the complete response, potentially in multiple chunks"""
+    def receive_full_response(self, sock, buffer_size=65536):
+        """Receive the complete response, handling both length-prefixed and legacy JSON chunks."""
         chunks = []
-        # Use a consistent timeout value that matches the addon's timeout
-        sock.settimeout(180.0)  # Match the addon's timeout
-        
+        receiver = FrameReceiver()
+        sock.settimeout(180.0)
+
         try:
             while True:
                 try:
                     chunk = sock.recv(buffer_size)
                     if not chunk:
-                        # If we get an empty chunk, the connection might be closed
-                        if not chunks:  # If we haven't received anything yet, this is an error
+                        if not chunks:
                             raise Exception("Connection closed before receiving any data")
                         break
-                    
+
                     chunks.append(chunk)
-                    
-                    # Check if we've received a complete JSON object
-                    try:
-                        data = b''.join(chunks)
-                        json.loads(data.decode('utf-8'))
-                        # If we get here, it parsed successfully
-                        logger.info(f"Received complete response ({len(data)} bytes)")
+                    messages = receiver.feed(chunk)
+                    if messages:
+                        data = json.dumps(messages[0]).encode("utf-8")
+                        logger.info(f"Received complete framed response ({len(data)} bytes)")
                         return data
-                    except json.JSONDecodeError:
-                        # Incomplete JSON, continue receiving
+
+                    # Legacy JSON fallback check if receiver hasn't emitted yet
+                    try:
+                        data = b"".join(chunks)
+                        json.loads(data.decode("utf-8"))
+                        logger.info(f"Received complete legacy response ({len(data)} bytes)")
+                        return data
+                    except (json.JSONDecodeError, UnicodeDecodeError):
                         continue
                 except socket.timeout:
-                    # If we hit a timeout during receiving, break the loop and try to use what we have
                     logger.warning("Socket timeout during chunked receive")
                     break
                 except (ConnectionError, BrokenPipeError, ConnectionResetError) as e:
                     logger.error(f"Socket connection error during receive: {str(e)}")
-                    raise  # Re-raise to be handled by the caller
+                    raise
         except socket.timeout:
             logger.warning("Socket timeout during chunked receive")
         except Exception as e:
             logger.error(f"Error during receive: {str(e)}")
             raise
-            
-        # If we get here, we either timed out or broke out of the loop
-        # Try to use what we have
+
         if chunks:
-            data = b''.join(chunks)
+            data = b"".join(chunks)
             logger.info(f"Returning data after receive completion ({len(data)} bytes)")
             try:
-                # Try to parse what we have
-                json.loads(data.decode('utf-8'))
+                json.loads(data.decode("utf-8"))
                 return data
             except json.JSONDecodeError:
-                # If we can't parse it, it's incomplete
                 raise Exception("Incomplete JSON response received")
         else:
             raise Exception("No data received")
@@ -225,8 +229,8 @@ class BlenderConnection:
             # Log the command being sent
             logger.info(f"Sending command: {command_type} with params: {params}")
             
-            # Send the command
-            self.sock.sendall(json.dumps(command).encode('utf-8'))
+            # Send the command (framed with legacy fallback support)
+            send_framed_message(self.sock, command)
             logger.info(f"Command sent, waiting for response...")
             
             # Set a timeout for receiving - use the same timeout as in receive_full_response
@@ -2217,6 +2221,235 @@ def viewport_pick(seq: int, x: float, y: float) -> CallToolResult:
         mimeType="application/json",
     ).model_dump(by_alias=True, exclude_none=True, mode="json")
     return CallToolResult(content=[], structuredContent={"object": {**obj, "link": link}})
+
+
+# -----------------------------------------------------------------------------
+# DXR-Inspired Computational Geometry & Neural-CAD Tools
+# -----------------------------------------------------------------------------
+
+@mcp.tool()
+async def ptlas_create_partition(name: str, parent_partition: str = "") -> str:
+    """Create an isolated spatial partition (Blender Collection) with Merkle integrity tracking.
+    
+    Parameters:
+    - name: Unique partition identifier (e.g. 'Room_ICU_101', 'Ambulance_Chassis')
+    - parent_partition: Optional parent collection/partition name
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("ptlas_create_partition", {"name": name, "parent": parent_partition})
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+async def ptlas_mutate_partition(partition_id: str, script: str) -> str:
+    """Execute Python edits locked strictly to partition_id with Copy-on-Write rollback guarantee.
+    
+    Parameters:
+    - partition_id: Target partition name
+    - script: Python code to execute within target partition
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("ptlas_mutate_partition", {"partition_id": partition_id, "script": script})
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+async def ptlas_verify_integrity(partition_id: str = "") -> str:
+    """Audit SHA-256 Merkle hashes across all partitions and report deviation or corruption."""
+    blender = get_blender_connection()
+    res = blender.send_command("ptlas_verify_integrity", {"partition_id": partition_id})
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+async def sdf_space_carve(
+    name: str,
+    front_png_path: str = None,
+    side_png_path: str = None,
+    top_png_path: str = None,
+    resolution: int = 128,
+    target_partition: str = "",
+) -> str:
+    """Compute a 3D visual hull base mesh from 1-3 orthographic silhouette PNGs in <350ms.
+    
+    Parameters:
+    - name: Generated mesh object name
+    - front_png_path, side_png_path, top_png_path: Filepaths to orthographic reference images
+    - resolution: 3D voxel resolution (default: 128)
+    - target_partition: Partition to assign created hull to
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("sdf_space_carve", {
+        "name": name,
+        "front_png": front_png_path,
+        "side_png": side_png_path,
+        "top_png": top_png_path,
+        "resolution": resolution,
+        "partition_id": target_partition,
+    })
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+async def clas_eval_bezier_patch(
+    name: str,
+    control_points_4x4: list[list[list[float]]],
+    res_u: int = 32,
+    res_v: int = 32,
+    partition_id: str = "",
+) -> str:
+    """Generate a smooth curved aerodynamic surface patch from 16 Vector3 control points via C-RNA.
+    
+    Parameters:
+    - name: Name of the created mesh object
+    - control_points_4x4: 4x4 array of [x, y, z] control points
+    - res_u, res_v: Surface evaluation resolution
+    - partition_id: Target partition
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("clas_eval_bezier_patch", {
+        "name": name,
+        "control_grid": control_points_4x4,
+        "res_u": res_u,
+        "res_v": res_v,
+        "partition_id": partition_id,
+    })
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+async def clas_loft_splines(
+    name: str,
+    sections: list[list[list[float]]],
+    resolution: int = 32,
+    closed: bool = True,
+    partition_id: str = "",
+) -> str:
+    """Loft cross-section profile splines into a watertight hull (fuselage, chassis) via C-RNA.
+    
+    Parameters:
+    - name: Mesh name
+    - sections: List of cross-sectional 3D point loops
+    - resolution: Radial point resolution
+    - closed: Whether profile rings are closed
+    - partition_id: Target partition
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("clas_loft_splines", {
+        "name": name,
+        "sections": sections,
+        "resolution": resolution,
+        "closed": closed,
+        "partition_id": partition_id,
+    })
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+async def clas_boolean_carve(
+    target_object: str,
+    cutter_spec: dict,
+    bevel_segments: int = 3,
+    harden_normals: bool = True,
+) -> str:
+    """Execute watertight boolean cavity carving with automatic weighted normal and bevel compensation.
+    
+    Parameters:
+    - target_object: Name of object to carve into
+    - cutter_spec: Specification of the cutter volume (primitive type, size, location)
+    - bevel_segments: Number of bevel segments on carved boundary
+    - harden_normals: Whether to apply harden normals for smooth shading
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("clas_boolean_carve", {
+        "target_object": target_object,
+        "cutter_spec": cutter_spec,
+        "bevel_segments": bevel_segments,
+        "harden_normals": harden_normals,
+    })
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+async def gbuffer_quad_capture(
+    filepath: str = None,
+    include_wireframe: bool = True,
+    target_partition: str = None,
+) -> dict:
+    """Render 1024x1024 4-quad composite (Top, Front, Side+Wireframe, AgX Perspective) with depth metadata.
+    
+    Parameters:
+    - filepath: Optional destination path for the rendered composite image
+    - include_wireframe: Overlay wireframe on orthographic quadrants
+    - target_partition: Limit render focus to target partition
+    """
+    blender = get_blender_connection()
+    return blender.send_command("gbuffer_quad_capture", {
+        "filepath": filepath,
+        "include_wireframe": include_wireframe,
+        "target_partition": target_partition,
+    })
+
+@mcp.tool()
+async def gbuffer_project_uv(
+    quadrant: str,
+    u: float,
+    v: float,
+    align_to_surface_normal: bool = True,
+) -> dict:
+    """Unproject 2D render coordinate (u, v) to 3D world space (X, Y, Z) and normal-aligned quaternion.
+    
+    Parameters:
+    - quadrant: 'top', 'front', 'side', or 'perspective'
+    - u, v: Normalized 2D pixel coordinates (0.0 to 1.0)
+    - align_to_surface_normal: Compute alignment quaternion [w, x, y, z] to normal
+    """
+    blender = get_blender_connection()
+    return blender.send_command("gbuffer_project_uv", {
+        "quadrant": quadrant,
+        "u": u,
+        "v": v,
+        "align_to_normal": align_to_surface_normal,
+    })
+
+@mcp.tool()
+async def pbr_compile_curvature_ao(
+    object_name: str,
+    curvature_weight: float = 1.0,
+    ao_samples: int = 16,
+) -> str:
+    """Calculate vectorized Laplacian curvature & AO attribute into McpCurvatureAO in <20ms.
+    
+    Parameters:
+    - object_name: Target mesh object
+    - curvature_weight: Intensity of edge wear highlighting
+    - ao_samples: Sampling density for cavity darkening
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("pbr_compile_curvature_ao", {
+        "object_name": object_name,
+        "curvature_weight": curvature_weight,
+        "ao_samples": ao_samples,
+    })
+    return json.dumps(res, indent=2)
+
+@mcp.tool()
+async def export_game_asset(
+    target_object_or_partition: str,
+    filepath: str,
+    target_triangle_budget: int = None,
+    file_format: str = "glb",
+) -> str:
+    """Normalize pivot to bottom-center (0,0,0), apply transforms, optimize quad/tri budget, and export.
+    
+    Parameters:
+    - target_object_or_partition: Object or partition collection to export
+    - filepath: Destination export file path
+    - target_triangle_budget: Optional polygon reduction target
+    - file_format: 'glb' or 'fbx'
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("export_game_asset", {
+        "target": target_object_or_partition,
+        "filepath": filepath,
+        "triangle_budget": target_triangle_budget,
+        "format": file_format,
+    })
+    return json.dumps(res, indent=2)
+
 
 
 _client_features_logged = False
