@@ -267,11 +267,11 @@
   - Rear Left: $(-0.890, -1.350, 0.340)$
   - Rear Right: $(+0.890, -1.350, 0.340)$
 
-- [ ] **Step 1: Write test verifying wheel instancing (`obj.data` shared across all 4 wheel objects)**
-- [ ] **Step 2: Implement detailed master wheel assembly BMesh generator**
-- [ ] **Step 3: Instance master wheel to FL, FR, RL, RR with proper symmetry and brake orientation**
-- [ ] **Step 4: Execute in live Blender and verify wheel fitment and stance**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write test verifying wheel instancing (`obj.data` shared across all 4 wheel objects)**
+- [x] **Step 2: Implement detailed master wheel assembly BMesh generator**
+- [x] **Step 3: Instance master wheel to FL, FR, RL, RR with proper symmetry and brake orientation**
+- [x] **Step 4: Execute in live Blender and verify wheel fitment and stance**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -288,10 +288,10 @@
   - Headlights: Smoked housing, dual projector LED glass lenses, sharp angled Z-pattern LED daytime running light ribbons (Emissive White $15.0$)
   - Tail Lights: Sculpted angular ribbon LED bar spanning rear deck with deep red luminescence (Emissive Red $12.0$) and smoked lens cover
 
-- [ ] **Step 1: Write test verifying lighting positions and emission materials**
-- [ ] **Step 2: Implement BMesh headlights and taillights with lenses and reflectors**
-- [ ] **Step 3: Execute in live Blender and verify light guides**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying lighting positions and emission materials**
+- [x] **Step 2: Implement BMesh headlights and taillights with lenses and reflectors**
+- [x] **Step 3: Execute in live Blender and verify light guides**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -308,10 +308,10 @@
   - Sculpted aero mirror caps with subtle indicator strip
   - Reflective chrome mirror glass facing rearward
 
-- [ ] **Step 1: Write test verifying mirror positions and symmetry**
-- [ ] **Step 2: Implement aerodynamic mirror BMesh generator**
-- [ ] **Step 3: Execute in live Blender and verify placement**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying mirror positions and symmetry**
+- [x] **Step 2: Implement aerodynamic mirror BMesh generator**
+- [x] **Step 3: Execute in live Blender and verify placement**
+- [x] **Step 4: Commit changes**
 
 ---
 
