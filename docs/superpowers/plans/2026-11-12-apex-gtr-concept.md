@@ -90,10 +90,10 @@
   - B/C-Pillars & Fastback Decklid: sloping down to rear ducktail at $Y = -1.95\text{ m}, Z = 0.82\text{ m}$
   - Side Scoops: Sculpted intake recesses ahead of rear wheels ($Y = -0.4\text{ to } -0.9\text{ m}$)
 
-- [ ] **Step 1: Write verification test for `GTR_Body_Shell` geometry and vertex bounds**
-- [ ] **Step 2: Implement BMesh cross-sectional parametric generation for body unibody**
-- [ ] **Step 3: Execute in live Blender and verify quad topology and smooth curves**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write verification test for `GTR_Body_Shell` geometry and vertex bounds**
+- [x] **Step 2: Implement BMesh cross-sectional parametric generation for body unibody**
+- [x] **Step 3: Execute in live Blender and verify quad topology and smooth curves**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -110,10 +110,10 @@
   - Rear arch center: $Y = -1.350\text{ m}, Z = 0.340\text{ m}$, Radius $0.390\text{ m}$, Width flare extending to $X = \pm 0.995\text{ m}$
   - Aero cutouts: Vertical air pressure relief louvers/extractors behind front wheel wells
 
-- [ ] **Step 1: Write test verifying wheel arch radii and clearance**
-- [ ] **Step 2: Implement flared fender BMesh generator with wheel arch cutouts**
-- [ ] **Step 3: Execute in live Blender and inspect fender curvature**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying wheel arch radii and clearance**
+- [x] **Step 2: Implement flared fender BMesh generator with wheel arch cutouts**
+- [x] **Step 3: Execute in live Blender and inspect fender curvature**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -130,10 +130,10 @@
   - Frameless Side Quarter Glass: Sleek low aerodynamic profile
   - Fastback Rear Hatch: Sloped rear window with integrated defroster lines
 
-- [ ] **Step 1: Write test verifying glass canopy alignment to body pillars**
-- [ ] **Step 2: Implement glass canopy BMesh generator with glass and black frit materials**
-- [ ] **Step 3: Execute in live Blender and verify optical transparency and fit**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying glass canopy alignment to body pillars**
+- [x] **Step 2: Implement glass canopy BMesh generator with glass and black frit materials**
+- [x] **Step 3: Execute in live Blender and verify optical transparency and fit**
+- [x] **Step 4: Commit changes**
 
 ---
 
