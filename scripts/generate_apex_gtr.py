@@ -1470,3 +1470,232 @@ def build_rear_wing(materials: Dict[str, Any], collections: Dict[str, Any]) -> A
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 10. Component Assembly Generators: Wheels & Instancing (Phase 4)
+# ==============================================================================
+
+def generate_master_wheel_mesh_data(
+    n_th: int = 48,
+    n_prof: int = 20,
+    n_barrel: int = 8
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Wheel_Master."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    # 1. Performance Radial Tire (R_bead=0.260 to R_tread=0.340, width=0.280)
+    tire_base = len(all_verts)
+    prof_x: List[float] = []
+    prof_r: List[float] = []
+    for k in range(n_prof + 1):
+        kf = k / n_prof
+        if kf <= 0.25:
+            u = kf / 0.25
+            x = -0.110 * (1 - u) + (-0.140) * u
+            r = 0.260 * (1 - u) + 0.320 * u
+        elif kf <= 0.75:
+            u = (kf - 0.25) / 0.50
+            x = -0.140 * (1 - u) + 0.140 * u
+            r = 0.340 - 0.004 * ((2.0 * u - 1.0) ** 2)
+        else:
+            u = (kf - 0.75) / 0.25
+            x = 0.140 * (1 - u) + 0.110 * u
+            r = 0.320 * (1 - u) + 0.260 * u
+        prof_x.append(x)
+        prof_r.append(r)
+
+    for i in range(n_th):
+        ang = i * 2.0 * math.pi / n_th
+        sin_a = math.sin(ang)
+        cos_a = math.cos(ang)
+        for k in range(n_prof + 1):
+            all_verts.append([
+                round(float(prof_x[k]), 4),
+                round(float(cos_a * prof_r[k]), 4),
+                round(float(sin_a * prof_r[k]), 4)
+            ])
+
+    for i in range(n_th):
+        i_next = (i + 1) % n_th
+        for k in range(n_prof):
+            v0 = tire_base + i * (n_prof + 1) + k
+            v1 = v0 + 1
+            v2 = tire_base + i_next * (n_prof + 1) + (k + 1)
+            v3 = tire_base + i_next * (n_prof + 1) + k
+            all_faces.append([v0, v1, v2, v3])
+
+    # 2. Forged Alloy Rim Barrel (R=0.260)
+    rim_base = len(all_verts)
+    for i in range(n_th):
+        ang = i * 2.0 * math.pi / n_th
+        sin_a = math.sin(ang)
+        cos_a = math.cos(ang)
+        for b in range(n_barrel + 1):
+            bf = b / n_barrel
+            x = -0.110 * (1 - bf) + 0.110 * bf
+            r = 0.260 - 0.015 * math.sin(bf * math.pi)
+            all_verts.append([round(float(x), 4), round(float(cos_a * r), 4), round(float(sin_a * r), 4)])
+
+    for i in range(n_th):
+        i_next = (i + 1) % n_th
+        for b in range(n_barrel):
+            v0 = rim_base + i * (n_barrel + 1) + b
+            v1 = v0 + 1
+            v2 = rim_base + i_next * (n_barrel + 1) + (b + 1)
+            v3 = rim_base + i_next * (n_barrel + 1) + b
+            all_faces.append([v0, v1, v2, v3])
+
+    # 3. 10 Spoke Assembly (Split-Spoke GT Racing Design)
+    spoke_base = len(all_verts)
+    n_spokes = 10
+    n_sub_sp = 2
+    n_sp_len = 8
+    for sp in range(n_spokes):
+        base_ang = sp * 2.0 * math.pi / n_spokes
+        for sub in range(n_sub_sp):
+            sub_ang = base_ang + (-0.035 if sub == 0 else 0.035)
+            s_offset = len(all_verts)
+            for step in range(n_sp_len + 1):
+                sf = step / n_sp_len
+                r = 0.060 * (1 - sf) + 0.245 * sf
+                x = 0.040 * (1 - sf) + 0.095 * sf
+                for w in (-0.009, 0.009):
+                    tang = sub_ang + w / max(0.05, r)
+                    for layer in (-0.006, 0.006):
+                        all_verts.append([
+                            round(float(x + layer), 4),
+                            round(float(math.cos(tang) * r), 4),
+                            round(float(math.sin(tang) * r), 4)
+                        ])
+
+            for step in range(n_sp_len):
+                v0 = s_offset + step * 4
+                v1 = v0 + 1
+                v2 = v0 + 3
+                v3 = v0 + 2
+                vn0 = s_offset + (step + 1) * 4
+                vn1 = vn0 + 1
+                vn2 = vn0 + 3
+                vn3 = vn0 + 2
+                all_faces.append([v0, v1, vn1, vn0])
+                all_faces.append([v3, vn2, vn3, v2])
+                all_faces.append([v0, vn0, vn2, v3])
+                all_faces.append([v1, v2, vn3, vn1])
+
+    # 4. Ventilated Carbon-Ceramic Brake Rotor
+    rotor_base = len(all_verts)
+    n_rot_th = 48
+    for i in range(n_rot_th):
+        ang = i * 2.0 * math.pi / n_rot_th
+        sin_a = math.sin(ang)
+        cos_a = math.cos(ang)
+        for r_val in (0.070, 0.195):
+            for x_val in (0.010, 0.026):
+                all_verts.append([round(float(x_val), 4), round(float(cos_a * r_val), 4), round(float(sin_a * r_val), 4)])
+
+    for i in range(n_rot_th):
+        i_next = (i + 1) % n_rot_th
+        v0 = rotor_base + i * 4 + 1
+        v1 = rotor_base + i_next * 4 + 1
+        v2 = rotor_base + i_next * 4 + 3
+        v3 = rotor_base + i * 4 + 3
+        all_faces.append([v0, v1, v2, v3])
+
+        v0_b = rotor_base + i * 4
+        v1_b = rotor_base + i * 4 + 2
+        v2_b = rotor_base + i_next * 4 + 2
+        v3_b = rotor_base + i_next * 4
+        all_faces.append([v0_b, v1_b, v2_b, v3_b])
+        all_faces.append([v3, v2, v2_b, v1_b])
+
+    # 5. 6-Piston Caliper (Brembo Red)
+    cal_base = len(all_verts)
+    n_cal_u = 10
+    n_cal_v = 10
+    for cu in range(n_cal_u + 1):
+        cuf = cu / n_cal_u
+        ang = 0.18 * math.pi + cuf * 0.28 * math.pi
+        sin_a = math.sin(ang)
+        cos_a = math.cos(ang)
+        for cv in range(n_cal_v + 1):
+            cvf = cv / n_cal_v
+            r = 0.155 * (1 - cvf) + 0.215 * cvf
+            x = 0.035 + 0.038 * (cvf ** 0.5)
+            all_verts.append([round(float(x), 4), round(float(cos_a * r), 4), round(float(sin_a * r), 4)])
+
+    for cu in range(n_cal_u):
+        for cv in range(n_cal_v):
+            v0 = cal_base + cu * (n_cal_v + 1) + cv
+            v1 = v0 + 1
+            v2 = cal_base + (cu + 1) * (n_cal_v + 1) + (cv + 1)
+            v3 = cal_base + (cu + 1) * (n_cal_v + 1) + cv
+            all_faces.append([v0, v1, v2, v3])
+
+    return all_verts, all_faces
+
+
+def build_master_wheel(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Wheel_Master and instance 4 wheels (FL, FR, RL, RR) in Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_master_wheel_mesh_data()
+    master_mesh = bpy.data.meshes.new("GTR_Wheel_Master_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(master_mesh)
+    bm.free()
+
+    # Materials for wheel mesh
+    if "MAT_GTR_Tire_Rubber" in materials:
+        master_mesh.materials.append(materials["MAT_GTR_Tire_Rubber"])
+    if "MAT_GTR_Carbon_Satin" in materials:
+        master_mesh.materials.append(materials["MAT_GTR_Carbon_Satin"])
+    if "MAT_GTR_Brake_Steel" in materials:
+        master_mesh.materials.append(materials["MAT_GTR_Brake_Steel"])
+    if "MAT_GTR_Caliper_Red" in materials:
+        master_mesh.materials.append(materials["MAT_GTR_Caliper_Red"])
+
+    col = collections.get("05_Wheels", bpy.context.scene.collection)
+
+    wheel_configs = [
+        ("GTR_Wheel_FL", (-0.880, 1.350, 0.340), 0.0),
+        ("GTR_Wheel_FR", (0.880, 1.350, 0.340), math.pi),
+        ("GTR_Wheel_RL", (-0.890, -1.350, 0.340), 0.0),
+        ("GTR_Wheel_RR", (0.890, -1.350, 0.340), math.pi),
+    ]
+
+    instanced_objects = []
+    for name, pos, rot_z in wheel_configs:
+        obj = bpy.data.objects.get(name)
+        if obj is None:
+            obj = bpy.data.objects.new(name, master_mesh)
+            col.objects.link(obj)
+        else:
+            obj.data = master_mesh
+
+        obj.location = pos
+        obj.rotation_euler = (0.0, 0.0, rot_z)
+
+        # Modifiers per instanced object
+        if "Auto_WeightedNormal" not in obj.modifiers:
+            wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+            wn.keep_sharp = True
+
+        instanced_objects.append(obj)
+
+    return instanced_objects
