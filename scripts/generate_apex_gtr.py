@@ -1987,3 +1987,145 @@ def build_tail_lights(materials: Dict[str, Any], collections: Dict[str, Any]) ->
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 12. Component Assembly Generators: Mirrors (Phase 4)
+# ==============================================================================
+
+def generate_mirrors_mesh_data(
+    nu_cap: int = 16,
+    nv_cap: int = 12
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Aero_Mirrors."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    for side in (-1, 1):
+        # 1. Aerodynamic support stalk
+        st_base = len(all_verts)
+        n_st = 6
+        n_st_circ = 8
+        for i in range(n_st + 1):
+            sf = i / n_st
+            x_st = side * (0.880 * (1 - sf) + 0.960 * sf)
+            y_st = 0.720 * (1 - sf) + 0.700 * sf
+            z_st = 0.740 * (1 - sf) + 0.790 * sf
+            r_st = 0.012
+            for j in range(n_st_circ):
+                ang = j * 2.0 * math.pi / n_st_circ
+                dy = math.cos(ang) * (r_st * 1.5)
+                dz = math.sin(ang) * r_st
+                all_verts.append([round(float(x_st), 4), round(float(y_st + dy), 4), round(float(z_st + dz), 4)])
+
+        for i in range(n_st):
+            for j in range(n_st_circ):
+                j_next = (j + 1) % n_st_circ
+                v0 = st_base + i * n_st_circ + j
+                v1 = st_base + i * n_st_circ + j_next
+                v2 = st_base + (i + 1) * n_st_circ + j_next
+                v3 = st_base + (i + 1) * n_st_circ + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+        # 2. Sculpted Mirror Cap
+        cap_base = len(all_verts)
+        cy = 0.700
+        cz = 0.810
+        for i in range(nu_cap + 1):
+            uf = i / nu_cap
+            x = side * (0.950 * (1 - uf) + 1.035 * uf)
+            r_cap = 0.045 * math.sin(uf * math.pi)
+
+            for j in range(nv_cap + 1):
+                vf = j / nv_cap
+                ang = vf * 2.0 * math.pi
+                dy = math.cos(ang) * (r_cap * 1.4)
+                dz = math.sin(ang) * r_cap
+                all_verts.append([round(float(x), 4), round(float(cy + dy), 4), round(float(cz + dz), 4)])
+
+        for i in range(nu_cap):
+            for j in range(nv_cap):
+                v0 = cap_base + i * (nv_cap + 1) + j
+                v1 = v0 + 1
+                v2 = cap_base + (i + 1) * (nv_cap + 1) + (j + 1)
+                v3 = cap_base + (i + 1) * (nv_cap + 1) + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+        # 3. Flat Reflective Mirror Glass (facing rearward)
+        glass_base = len(all_verts)
+        n_g_u = 8
+        n_g_v = 6
+        for gu in range(n_g_u + 1):
+            guf = gu / n_g_u
+            x = side * (0.955 * (1 - guf) + 1.025 * guf)
+            for gv in range(n_g_v + 1):
+                gvf = gv / n_g_v
+                z = 0.780 * (1 - gvf) + 0.840 * gvf
+                all_verts.append([round(float(x), 4), 0.675, round(float(z), 4)])
+
+        for gu in range(n_g_u):
+            for gv in range(n_g_v):
+                v0 = glass_base + gu * (n_g_v + 1) + gv
+                v1 = v0 + 1
+                v2 = glass_base + (gu + 1) * (n_g_v + 1) + (gv + 1)
+                v3 = glass_base + (gu + 1) * (n_g_v + 1) + gv
+                if side < 0:
+                    all_faces.append([v0, v3, v2, v1])
+                else:
+                    all_faces.append([v0, v1, v2, v3])
+
+    return all_verts, all_faces
+
+
+def build_aero_mirrors(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Aero_Mirrors inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_mirrors_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Aero_Mirrors_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Aero_Mirrors", mesh)
+
+    if "MAT_GTR_Paint_Gunmetal" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Paint_Gunmetal"])
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+    if "MAT_GTR_Brake_Steel" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Brake_Steel"])
+
+    bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+    bev.width = 0.003
+    bev.segments = 2
+    bev.profile = 0.5
+    bev.harden_normals = True
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    col = collections.get("03_Glass_and_Mirrors", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
