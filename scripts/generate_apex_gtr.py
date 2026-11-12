@@ -692,3 +692,182 @@ def build_glass_canopy(materials: Dict[str, Any], collections: Dict[str, Any]) -
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 5. Component Assembly Generators: Front Bumper & Splitter (Phase 3)
+# ==============================================================================
+
+def generate_front_bumper_mesh_data(
+    ny_b: int = 24,
+    nx_b: int = 32,
+    n_spl_y: int = 16,
+    n_spl_x: int = 28
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Front_Bumper_Splitter."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    # 1. Front Bumper Main Fascia
+    b_base = len(all_verts)
+    for i in range(ny_b + 1):
+        yf = i / ny_b
+        y_center = 1.800 + 0.450 * yf
+        z_bot = 0.120 + 0.040 * yf
+        z_top = 0.650 + 0.030 * yf
+
+        for j in range(nx_b + 1):
+            xf = j / nx_b
+            x = -0.920 * (1 - xf) + 0.920 * xf
+            sweep = 0.350 * (1.0 - (x / 0.920) ** 2)
+            y = 1.800 + (y_center - 1.800) * (sweep / 0.350)
+            z = z_bot * (1 - yf) + z_top * yf
+            all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+    for i in range(ny_b):
+        for j in range(nx_b):
+            v0 = b_base + i * (nx_b + 1) + j
+            v1 = v0 + 1
+            v2 = b_base + (i + 1) * (nx_b + 1) + (j + 1)
+            v3 = b_base + (i + 1) * (nx_b + 1) + j
+            all_faces.append([v0, v1, v2, v3])
+
+    # 2. Ground-Scraping Front Splitter Blade (Z=0.050 to 0.070, Y reaching 2.305)
+    spl_base = len(all_verts)
+    for k in (0, 1):
+        z_spl = 0.050 if k == 0 else 0.070
+        for i in range(n_spl_y + 1):
+            yf = i / n_spl_y
+            y_curr = 1.850 * (1 - yf) + 2.305 * yf
+
+            for j in range(n_spl_x + 1):
+                xf = j / n_spl_x
+                x = -0.940 * (1 - xf) + 0.940 * xf
+                spl_sweep = 0.380 * (1.0 - (x / 0.940) ** 2)
+                y = 1.850 + (y_curr - 1.850) * max(0.2, spl_sweep / 0.380)
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z_spl), 4)])
+
+    n_pts_layer = (n_spl_y + 1) * (n_spl_x + 1)
+    for layer in (0, 1):
+        l_base = spl_base + layer * n_pts_layer
+        for i in range(n_spl_y):
+            for j in range(n_spl_x):
+                v0 = l_base + i * (n_spl_x + 1) + j
+                v1 = v0 + 1
+                v2 = l_base + (i + 1) * (n_spl_x + 1) + (j + 1)
+                v3 = l_base + (i + 1) * (n_spl_x + 1) + j
+                if layer == 0:
+                    all_faces.append([v0, v3, v2, v1])
+                else:
+                    all_faces.append([v0, v1, v2, v3])
+
+    # Splitter leading edge perimeter rim
+    for j in range(n_spl_x):
+        b_lead0 = spl_base + n_spl_y * (n_spl_x + 1) + j
+        b_lead1 = b_lead0 + 1
+        t_lead0 = b_lead0 + n_pts_layer
+        t_lead1 = b_lead1 + n_pts_layer
+        all_faces.append([b_lead0, b_lead1, t_lead1, t_lead0])
+
+    # 3. Aerodynamic Dive Planes / Canards (2 pairs on left and right)
+    canard_base = len(all_verts)
+    n_can_u = 8
+    n_can_v = 6
+    for side in (-1, 1):
+        for tier in (0, 1):
+            c_layer_base = len(all_verts)
+            z_c_base = 0.260 + tier * 0.160
+            y_c_base = 2.080 + tier * 0.050
+
+            for cu in range(n_can_u + 1):
+                uf = cu / n_can_u
+                # Span outward
+                x_c = side * (0.840 * (1 - uf) + 0.940 * uf)
+                for cv in range(n_can_v + 1):
+                    vf = cv / n_can_v
+                    y_c = y_c_base + 0.120 * vf
+                    z_c = z_c_base + 0.040 * uf + 0.020 * (vf ** 2)
+                    all_verts.append([round(float(x_c), 4), round(float(y_c), 4), round(float(z_c), 4)])
+
+            for cu in range(n_can_u):
+                for cv in range(n_can_v):
+                    v0 = c_layer_base + cu * (n_can_v + 1) + cv
+                    v1 = v0 + 1
+                    v2 = c_layer_base + (cu + 1) * (n_can_v + 1) + (cv + 1)
+                    v3 = c_layer_base + (cu + 1) * (n_can_v + 1) + cv
+                    if side < 0:
+                        all_faces.append([v0, v1, v2, v3])
+                    else:
+                        all_faces.append([v0, v3, v2, v1])
+
+    # 4. Central Grille Recess Pocket
+    grille_base = len(all_verts)
+    n_g_y = 6
+    n_g_x = 16
+    for gi in range(n_g_y + 1):
+        gf = gi / n_g_y
+        zg = 0.200 * (1 - gf) + 0.480 * gf
+        for gj in range(n_g_x + 1):
+            gxf = gj / n_g_x
+            xg = -0.460 * (1 - gxf) + 0.460 * gxf
+            # Recessed inward
+            yg = 2.140 - 0.080 * math.cos(gxf * math.pi - math.pi / 2.0)
+            all_verts.append([round(float(xg), 4), round(float(yg), 4), round(float(zg), 4)])
+
+    for gi in range(n_g_y):
+        for gj in range(n_g_x):
+            v0 = grille_base + gi * (n_g_x + 1) + gj
+            v1 = v0 + 1
+            v2 = grille_base + (gi + 1) * (n_g_x + 1) + (gj + 1)
+            v3 = grille_base + (gi + 1) * (n_g_x + 1) + gj
+            all_faces.append([v0, v1, v2, v3])
+
+    return all_verts, all_faces
+
+
+def build_front_bumper_splitter(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Front_Bumper_Splitter inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_front_bumper_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Front_Bumper_Splitter_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Front_Bumper_Splitter", mesh)
+
+    if "MAT_GTR_Paint_Gunmetal" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Paint_Gunmetal"])
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+    if "MAT_GTR_Crimson_Accent" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Crimson_Accent"])
+
+    bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+    bev.width = 0.005
+    bev.segments = 2
+    bev.profile = 0.5
+    bev.harden_normals = True
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    col = collections.get("02_Aero_Fascia", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
