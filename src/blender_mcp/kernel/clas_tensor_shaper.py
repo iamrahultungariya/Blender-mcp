@@ -91,7 +91,7 @@ def eval_bicubic_bezier_patch(
 
 
 def loft_spline_sections(
-    sections: list[np.ndarray], resolution: int = 32, closed: bool = True
+    sections: list[np.ndarray], resolution: int = 32, closed: bool = True, longitudinal_samples: int = 1
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Loft a sequence of cross-section profile splines into a surface hull.
 
@@ -99,6 +99,7 @@ def loft_spline_sections(
     - sections: list of (M, 3) cross-section point arrays
     - resolution: number of samples along each perimeter profile
     - closed: whether each cross-section loop is closed
+    - longitudinal_samples: number of spline interpolation steps between stations (>1 enables smooth G1 Catmull-Rom lofting)
 
     Returns:
     - vertices, quads, normals
@@ -126,10 +127,34 @@ def loft_spline_sections(
             resampled[:, dim] = np.interp(t_target, t_orig, sec_extended[:, dim] if closed else sec[:, dim])
         resampled_sections.append(resampled)
 
-    verts = np.vstack(resampled_sections)  # Shape: (num_sections * res, 3)
+    # Apply Catmull-Rom longitudinal spline interpolation if requested
+    if longitudinal_samples > 1 and num_sections >= 2:
+        S = np.array(resampled_sections, dtype=np.float32)  # (K, res, 3)
+        P_neg1 = (2 * S[0] - S[1])[None, ...]
+        P_K = (2 * S[-1] - S[-2])[None, ...]
+        P = np.vstack([P_neg1, S, P_K])
+
+        interpolated_sections = []
+        for s in range(num_sections - 1):
+            p0 = P[s]
+            p1 = P[s+1]
+            p2 = P[s+2]
+            p3 = P[s+3]
+            is_last = (s == num_sections - 2)
+            steps = longitudinal_samples + (1 if is_last else 0)
+            t = np.linspace(0.0, 1.0, steps, endpoint=is_last, dtype=np.float32)[:, None, None]
+            val = 0.5 * (2 * p1 + (-p0 + p2) * t + (2*p0 - 5*p1 + 4*p2 - p3) * (t**2) + (-p0 + 3*p1 - 3*p2 + p3) * (t**3))
+            for step_idx in range(len(val)):
+                interpolated_sections.append(val[step_idx])
+        eval_sections = interpolated_sections
+    else:
+        eval_sections = resampled_sections
+
+    total_sections = len(eval_sections)
+    verts = np.vstack(eval_sections)  # Shape: (total_sections * res, 3)
 
     quads_list = []
-    for s in range(num_sections - 1):
+    for s in range(total_sections - 1):
         for i in range(res):
             next_i = (i + 1) % res if closed else i + 1
             if not closed and next_i >= res:
@@ -160,21 +185,152 @@ def loft_spline_sections(
     return verts, quads, normals.astype(np.float32)
 
 
+def extract_visual_hull_mesh(
+    front_mask: np.ndarray | None = None,
+    side_mask: np.ndarray | None = None,
+    top_mask: np.ndarray | None = None,
+    resolution: int = 32,
+    bounds: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] = ((-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0))
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute 3-axis visual hull occupancy grid and extract watertight quad surface."""
+    R = int(resolution)
+    if R < 2:
+        R = 2
+
+    occ = np.ones((R, R, R), dtype=bool)
+
+    def resample_mask(mask: np.ndarray | None) -> np.ndarray | None:
+        if mask is None:
+            return None
+        arr = np.asarray(mask, dtype=float)
+        if arr.ndim > 2:
+            if arr.shape[-1] >= 4:
+                arr = arr[..., 3]
+            else:
+                arr = arr.mean(axis=-1)
+        if arr.max() > 1.0:
+            arr = arr / 255.0
+        bin_mask = arr > 0.3
+        h, w = bin_mask.shape
+        row_idx = (np.linspace(0, h - 1, R)).astype(int)
+        col_idx = (np.linspace(0, w - 1, R)).astype(int)
+        return bin_mask[np.ix_(row_idx, col_idx)]
+
+    m_front = resample_mask(front_mask)
+    m_side = resample_mask(side_mask)
+    m_top = resample_mask(top_mask)
+
+    if m_front is not None:
+        occ &= m_front[:, None, :]
+    if m_side is not None:
+        occ &= m_side[:, :, None]
+    if m_top is not None:
+        occ &= m_top[None, :, :]
+
+    if not np.any(occ):
+        zz, yy, xx = np.mgrid[:R, :R, :R]
+        c = (R - 1) / 2.0
+        occ = ((xx - c)**2 + (yy - c)**2 + (zz - c)**2) <= (c * 0.9)**2
+
+    (x_min, x_max), (y_min, y_max), (z_min, z_max) = bounds
+    grid_x = np.linspace(x_min, x_max, R + 1, dtype=np.float32)
+    grid_y = np.linspace(y_min, y_max, R + 1, dtype=np.float32)
+    grid_z = np.linspace(z_min, z_max, R + 1, dtype=np.float32)
+
+    def corner_idx(k, j, i):
+        return k * (R + 1) * (R + 1) + j * (R + 1) + i
+
+    quads = []
+    for k in range(R):
+        for j in range(R):
+            for i in range(R):
+                if not occ[k, j, i]:
+                    continue
+
+                if i == 0 or not occ[k, j, i - 1]:
+                    quads.append([
+                        corner_idx(k, j, i),
+                        corner_idx(k + 1, j, i),
+                        corner_idx(k + 1, j + 1, i),
+                        corner_idx(k, j + 1, i)
+                    ])
+                if i == R - 1 or not occ[k, j, i + 1]:
+                    quads.append([
+                        corner_idx(k, j, i + 1),
+                        corner_idx(k, j + 1, i + 1),
+                        corner_idx(k + 1, j + 1, i + 1),
+                        corner_idx(k + 1, j, i + 1)
+                    ])
+                if j == 0 or not occ[k, j - 1, i]:
+                    quads.append([
+                        corner_idx(k, j, i),
+                        corner_idx(k, j, i + 1),
+                        corner_idx(k + 1, j, i + 1),
+                        corner_idx(k + 1, j, i)
+                    ])
+                if j == R - 1 or not occ[k, j + 1, i]:
+                    quads.append([
+                        corner_idx(k, j + 1, i),
+                        corner_idx(k + 1, j + 1, i),
+                        corner_idx(k + 1, j + 1, i + 1),
+                        corner_idx(k, j + 1, i + 1)
+                    ])
+                if k == 0 or not occ[k - 1, j, i]:
+                    quads.append([
+                        corner_idx(k, j, i),
+                        corner_idx(k, j + 1, i),
+                        corner_idx(k, j + 1, i + 1),
+                        corner_idx(k, j, i + 1)
+                    ])
+                if k == R - 1 or not occ[k + 1, j, i]:
+                    quads.append([
+                        corner_idx(k + 1, j, i),
+                        corner_idx(k + 1, j, i + 1),
+                        corner_idx(k + 1, j + 1, i + 1),
+                        corner_idx(k + 1, j + 1, i)
+                    ])
+
+    if not quads:
+        return np.zeros((0, 3), dtype=np.float32), np.zeros((0, 4), dtype=np.int32)
+
+    quads_arr = np.array(quads, dtype=np.int32)
+    used_indices, inverse = np.unique(quads_arr, return_inverse=True)
+    new_quads = inverse.reshape(quads_arr.shape)
+
+    kk = used_indices // ((R + 1) * (R + 1))
+    rem = used_indices % ((R + 1) * (R + 1))
+    jj = rem // (R + 1)
+    ii = rem % (R + 1)
+
+    verts = np.column_stack([grid_x[ii], grid_y[jj], grid_z[kk]]).astype(np.float32)
+    return verts, new_quads.astype(np.int32)
+
+
 def apply_blender_version_compatibility(
-    node_or_mesh: Any, version_tuple: tuple[int, int, int] | None = None
+    node_or_mesh: Any,
+    version_tuple: tuple[int, int, int] | None = None,
+    smooth_angle_deg: float = 30.0,
 ) -> bool:
-    """Remap legacy Blender 3.x property and socket names for Blender 4.x/5.x compatibility."""
+    """Remap legacy Blender 3.x property and socket names for Blender 4.x/5.x/5.3+ compatibility.
+    
+    Handles:
+    1. Principled BSDF socket name updates in Blender 4.0+.
+    2. Legacy Blender 3.x / 4.0 auto-smooth properties (use_auto_smooth, auto_smooth_angle).
+    3. Modern Blender 4.1+ / 5.0 / 5.3+ auto-smooth via 'Smooth by Angle' modifier and polygon smooth shading.
+    """
     if version_tuple is None:
         try:
             import bpy
 
             version_tuple = bpy.app.version
         except Exception:
-            version_tuple = (4, 2, 0)
+            version_tuple = (5, 3, 0)
 
     major = version_tuple[0]
+    minor = version_tuple[1] if len(version_tuple) > 1 else 0
+    is_modern_smooth = (major > 4) or (major == 4 and minor >= 1)
 
-    # Handle Principled BSDF socket name updates in Blender 4.0+
+    # 1. Handle Principled BSDF socket name updates in Blender 4.0+
     if major >= 4 and hasattr(node_or_mesh, "type") and getattr(node_or_mesh, "type") == "BSDF_PRINCIPLED":
         socket_mapping = {
             "Specular": "Specular IOR Level",
@@ -189,13 +345,66 @@ def apply_blender_version_compatibility(
                 sock.name = socket_mapping[sock.name]
         return True
 
-    # Handle mesh auto-smooth deprecation in Blender 4.1+
-    if major >= 4 and hasattr(node_or_mesh, "use_auto_smooth"):
-        # Auto smooth replaced with modifier / node in 4.1
+    # 2. Modern Blender 4.1+ / 5.0 / 5.3+ Mesh & Mesh Object Handling
+    if is_modern_smooth:
+        applied = False
+
+        # Check if node_or_mesh is a Mesh Object
+        is_mesh_obj = hasattr(node_or_mesh, "type") and getattr(node_or_mesh, "type") == "MESH"
+        mesh_data = getattr(node_or_mesh, "data", None) if is_mesh_obj else None
+
+        # Enable smooth shading on polygons if accessible
+        target_mesh = mesh_data if mesh_data is not None else (node_or_mesh if hasattr(node_or_mesh, "polygons") else None)
+        if target_mesh and hasattr(target_mesh, "polygons"):
+            try:
+                for p in target_mesh.polygons:
+                    p.use_smooth = True
+                applied = True
+            except Exception:
+                pass
+
+        # Attach 'Smooth by Angle' modifier if node_or_mesh has modifiers
+        if hasattr(node_or_mesh, "modifiers"):
+            mod_names = [getattr(m, "name", "") for m in node_or_mesh.modifiers]
+            if "Smooth by Angle" not in mod_names:
+                try:
+                    mod = node_or_mesh.modifiers.new(name="Smooth by Angle", type='NODES')
+                    # Try linking official geometry node group if available in Blender session
+                    try:
+                        import bpy
+                        ng = bpy.data.node_groups.get("Smooth by Angle")
+                        if ng and hasattr(mod, "node_group"):
+                            mod.node_group = ng
+                    except Exception:
+                        pass
+                    applied = True
+                except Exception:
+                    pass
+            else:
+                applied = True
+
+        return applied
+
+    # 3. Legacy Blender 3.x / 4.0 auto-smooth
+    if hasattr(node_or_mesh, "use_auto_smooth"):
         try:
-            setattr(node_or_mesh, "use_auto_smooth", True)
+            node_or_mesh.use_auto_smooth = True
+            if hasattr(node_or_mesh, "auto_smooth_angle"):
+                import math
+                node_or_mesh.auto_smooth_angle = math.radians(smooth_angle_deg)
+            return True
         except Exception:
             pass
-        return True
+
+    # If an Object was passed in legacy Blender, check obj.data
+    if hasattr(node_or_mesh, "data") and hasattr(node_or_mesh.data, "use_auto_smooth"):
+        try:
+            node_or_mesh.data.use_auto_smooth = True
+            if hasattr(node_or_mesh.data, "auto_smooth_angle"):
+                import math
+                node_or_mesh.data.auto_smooth_angle = math.radians(smooth_angle_deg)
+            return True
+        except Exception:
+            pass
 
     return False

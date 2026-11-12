@@ -23,6 +23,7 @@ mcp-for-blender = "blender_mcp.server:main"
 [tool.pytest.ini_options]
 python_files = ["test_*.py"]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [build-system]
 requires = ["setuptools>=77.0", "wheel"]

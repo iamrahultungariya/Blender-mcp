@@ -69,3 +69,66 @@ def test_apply_blender_version_compatibility_shim():
     assert applied is True
     socket_names = [s.name for s in node.inputs]
     assert "Specular IOR Level" in socket_names
+
+
+def test_apply_blender_5_3_mesh_compatibility():
+    """Verify Blender 5.3+ attaches 'Smooth by Angle' modifier and smooths polygons."""
+    class MockModifier:
+        def __init__(self, name, type):
+            self.name = name
+            self.type = type
+
+    class MockModifierManager:
+        def __init__(self):
+            self.mods = []
+        def new(self, name, type):
+            m = MockModifier(name, type)
+            self.mods.append(m)
+            return m
+        def __iter__(self):
+            return iter(self.mods)
+
+    class MockPoly:
+        def __init__(self):
+            self.use_smooth = False
+
+    class MockMesh:
+        def __init__(self):
+            self.polygons = [MockPoly(), MockPoly()]
+
+    class MockObject:
+        def __init__(self):
+            self.type = "MESH"
+            self.data = MockMesh()
+            self.modifiers = MockModifierManager()
+
+    obj = MockObject()
+    # Test on Blender 5.3.0
+    res = apply_blender_version_compatibility(obj, version_tuple=(5, 3, 0))
+    assert res is True
+    # Verify polygons were shaded smooth
+    assert all(p.use_smooth for p in obj.data.polygons)
+    # Verify 'Smooth by Angle' modifier was added
+    mod_names = [m.name for m in obj.modifiers]
+    assert "Smooth by Angle" in mod_names
+    assert obj.modifiers.mods[0].type == "NODES"
+
+    # Test idempotency (doesn't duplicate modifier if called twice)
+    res2 = apply_blender_version_compatibility(obj, version_tuple=(5, 3, 0))
+    assert res2 is True
+    assert len(obj.modifiers.mods) == 1
+
+
+def test_apply_legacy_blender_3_mesh_compatibility():
+    """Verify Blender 3.6 sets use_auto_smooth and auto_smooth_angle."""
+    class MockLegacyMesh:
+        def __init__(self):
+            self.use_auto_smooth = False
+            self.auto_smooth_angle = 0.0
+
+    mesh = MockLegacyMesh()
+    res = apply_blender_version_compatibility(mesh, version_tuple=(3, 6, 0))
+    assert res is True
+    assert mesh.use_auto_smooth is True
+    assert mesh.auto_smooth_angle > 0.0
+
