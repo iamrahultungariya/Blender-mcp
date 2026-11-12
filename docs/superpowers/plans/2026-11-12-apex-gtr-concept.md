@@ -40,11 +40,11 @@
 - Produces: `setup_scene_hierarchy() -> dict[str, bpy.types.Collection]`
 - Produces: `verify_bounding_box(obj, expected_min, expected_max, tolerance=0.02)`
 
-- [ ] **Step 1: Write test verifying dimension envelope and collection structure**
-- [ ] **Step 2: Run test to verify it fails**
-- [ ] **Step 3: Implement scene setup and collection hierarchy creation in `scripts/generate_apex_gtr.py`**
-- [ ] **Step 4: Execute in live Blender and verify collection hierarchy**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write test verifying dimension envelope and collection structure**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement scene setup and collection hierarchy creation in `scripts/generate_apex_gtr.py`**
+- [x] **Step 4: Execute in live Blender and verify collection hierarchy**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -66,11 +66,11 @@
   - `MAT_GTR_LED_Emissive`: High-intensity LED (Emission Color `(1.0, 1.0, 1.0)`, Strength `15.0`)
   - `MAT_GTR_Tail_Emissive`: Crimson Ribbon LED (Emission Color `(1.0, 0.02, 0.02)`, Strength `12.0`)
 
-- [ ] **Step 1: Write test verifying all 9 materials exist and have valid shader nodes**
-- [ ] **Step 2: Run test to verify it fails**
-- [ ] **Step 3: Implement `setup_gtr_materials()` in `scripts/generate_apex_gtr.py`**
-- [ ] **Step 4: Execute in live Blender and verify material nodes**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write test verifying all 9 materials exist and have valid shader nodes**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement `setup_gtr_materials()` in `scripts/generate_apex_gtr.py`**
+- [x] **Step 4: Execute in live Blender and verify material nodes**
+- [x] **Step 5: Commit changes**
 
 ---
 
