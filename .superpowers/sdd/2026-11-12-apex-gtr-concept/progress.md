@@ -5,6 +5,16 @@ Task 2: complete (commits 1bb3a2d..7f8bb99, tests: pytest tests/test_apex_gtr_ma
 Task 3: complete (commits 728f6ab..722a898, tests: pytest tests/test_apex_gtr_body_shell.py -> 2 passed)
 Task 4: complete (commits 722a898..6b4518f, tests: pytest tests/test_apex_gtr_fenders.py -> 2 passed)
 Task 5: complete (commits 6b4518f..e7b2719, tests: pytest tests/test_apex_gtr_glass.py -> 2 passed)
+Task 6: complete (commits e7b2719..14f3f77, tests: pytest tests/test_apex_gtr_front_fascia.py -> 2 passed)
+Task 7: complete (commits 14f3f77..1818162, tests: pytest tests/test_apex_gtr_hood.py -> 2 passed)
+Task 8: complete (commits 1818162..a97587e, tests: pytest tests/test_apex_gtr_side_skirts.py -> 2 passed)
+Task 9: complete (commits a97587e..fdec92c, tests: pytest tests/test_apex_gtr_rear_diffuser.py -> 2 passed)
+Task 10: complete (commits fdec92c..92e77c9, tests: pytest tests/test_apex_gtr_rear_wing.py -> 2 passed)
+
+
+
+
+
 
 
 

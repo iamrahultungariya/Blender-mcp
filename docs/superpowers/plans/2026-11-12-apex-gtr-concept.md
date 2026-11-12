@@ -154,10 +154,10 @@
   - Dual aerodynamic canards / dive planes on outer bumper corners
   - Continuous lower crimson red pinstripe accent
 
-- [ ] **Step 1: Write test verifying front splitter extension and ground clearance**
-- [ ] **Step 2: Implement BMesh front bumper and splitter with carbon and red accent materials**
-- [ ] **Step 3: Execute in live Blender and verify aggressive front fascia**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying front splitter extension and ground clearance**
+- [x] **Step 2: Implement BMesh front bumper and splitter with carbon and red accent materials**
+- [x] **Step 3: Execute in live Blender and verify aggressive front fascia**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -175,10 +175,10 @@
   - Recessed twin aero heat extraction vents with dark mesh backing
   - Front Apex emblem recess
 
-- [ ] **Step 1: Write test verifying hood shutline alignment with fenders and bumper**
-- [ ] **Step 2: Implement sculpted hood BMesh generator with recessed extraction ducts**
-- [ ] **Step 3: Execute in live Blender and verify hood creases**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying hood shutline alignment with fenders and bumper**
+- [x] **Step 2: Implement sculpted hood BMesh generator with recessed extraction ducts**
+- [x] **Step 3: Execute in live Blender and verify hood creases**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -196,10 +196,10 @@
   - Aerodynamic vertical end flick ahead of rear wheel arch
   - Crimson red pinstripe along lower edge
 
-- [ ] **Step 1: Write test verifying skirt alignment between front and rear wheel arches**
-- [ ] **Step 2: Implement side skirts BMesh generator with carbon fiber and red accent**
-- [ ] **Step 3: Execute in live Blender and inspect stance**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying skirt alignment between front and rear wheel arches**
+- [x] **Step 2: Implement side skirts BMesh generator with carbon fiber and red accent**
+- [x] **Step 3: Execute in live Blender and inspect stance**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -218,10 +218,10 @@
   - Quad round titanium exhaust tips ($2\times$ left, $2\times$ right) with heat-treated blue/gold rim
   - Lower diffuser crimson red accent outline
 
-- [ ] **Step 1: Write test verifying diffuser fin count (6) and exhaust tip positions**
-- [ ] **Step 2: Implement BMesh diffuser, exhaust tubes, and rain light**
-- [ ] **Step 3: Execute in live Blender and inspect rear aerodynamic tunnel**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying diffuser fin count (6) and exhaust tip positions**
+- [x] **Step 2: Implement BMesh diffuser, exhaust tubes, and rain light**
+- [x] **Step 3: Execute in live Blender and inspect rear aerodynamic tunnel**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -238,10 +238,10 @@
   - Cambered high-downforce airfoil blade spanning width $1.650\text{ m}$ at $Z = 1.05\text{ m}$
   - Large vertical aerodynamic endplates finished in vibrant Crimson Red
 
-- [ ] **Step 1: Write test verifying rear wing height and width limits**
-- [ ] **Step 2: Implement BMesh rear wing generator with swan-neck pylons and red endplates**
-- [ ] **Step 3: Execute in live Blender and verify wing stance**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying rear wing height and width limits**
+- [x] **Step 2: Implement BMesh rear wing generator with swan-neck pylons and red endplates**
+- [x] **Step 3: Execute in live Blender and verify wing stance**
+- [x] **Step 4: Commit changes**
 
 ---
 
