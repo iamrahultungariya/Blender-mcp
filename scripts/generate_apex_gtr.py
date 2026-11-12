@@ -1311,3 +1311,162 @@ def build_rear_diffuser_exhaust(materials: Dict[str, Any], collections: Dict[str
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 9. Component Assembly Generators: Rear Wing (Phase 3)
+# ==============================================================================
+
+def generate_rear_wing_mesh_data(
+    nx_w: int = 36,
+    nc_w: int = 16
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Rear_Wing."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    # 1. Cambered Airfoil Blade
+    blade_base = len(all_verts)
+    n_pts_chord = nc_w + 1
+    for layer in (0, 1):  # 0: bottom, 1: top
+        for i in range(nx_w + 1):
+            xf = i / nx_w
+            x = -0.825 * (1 - xf) + 0.825 * xf
+            droop = 0.015 * ((x / 0.825) ** 2)
+
+            for j in range(nc_w + 1):
+                cf = j / nc_w
+                y = -1.940 * (1 - cf) + (-2.260) * cf
+                camber = 0.025 * math.sin(cf * math.pi)
+                thickness = 0.020 * math.sin(cf * math.pi)
+                if layer == 1:
+                    z = 1.035 + camber + thickness * 0.5 - droop
+                else:
+                    z = 1.035 + camber - thickness * 0.5 - droop
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+    n_blade_layer = (nx_w + 1) * (nc_w + 1)
+    for layer in (0, 1):
+        l_base = blade_base + layer * n_blade_layer
+        for i in range(nx_w):
+            for j in range(nc_w):
+                v0 = l_base + i * n_pts_chord + j
+                v1 = v0 + 1
+                v2 = l_base + (i + 1) * n_pts_chord + (j + 1)
+                v3 = l_base + (i + 1) * n_pts_chord + j
+                if layer == 0:
+                    all_faces.append([v0, v3, v2, v1])
+                else:
+                    all_faces.append([v0, v1, v2, v3])
+
+    # Leading and trailing edge perimeter
+    for i in range(nx_w):
+        bl_0 = blade_base + i * n_pts_chord
+        bl_1 = blade_base + (i + 1) * n_pts_chord
+        tl_0 = bl_0 + n_blade_layer
+        tl_1 = bl_1 + n_blade_layer
+        all_faces.append([bl_0, bl_1, tl_1, tl_0])
+
+        bt_0 = blade_base + i * n_pts_chord + nc_w
+        bt_1 = blade_base + (i + 1) * n_pts_chord + nc_w
+        tt_0 = bt_0 + n_blade_layer
+        tt_1 = bt_1 + n_blade_layer
+        all_faces.append([bt_0, tt_0, tt_1, bt_1])
+
+    # 2. Dual Swan-Neck Pylons
+    n_py_s = 12
+    for sx in (-0.450, 0.450):
+        py_base = len(all_verts)
+        for i in range(n_py_s + 1):
+            pf = i / n_py_s
+            y_py = -1.860 * (1 - pf) + (-2.020) * pf
+            z_py = 0.850 * (1 - pf) + 1.090 * pf
+            for side_w in (-0.010, 0.010):
+                x_p = sx + side_w
+                for chord_p in (-0.025, 0.025):
+                    all_verts.append([round(float(x_p), 4), round(float(y_py + chord_p), 4), round(float(z_py), 4)])
+
+        for i in range(n_py_s):
+            v0 = py_base + i * 4
+            v1 = v0 + 1
+            v2 = py_base + (i + 1) * 4 + 1
+            v3 = py_base + (i + 1) * 4
+            all_faces.append([v0, v1, v2, v3])
+
+            v0_r = py_base + i * 4 + 2
+            v1_r = v0_r + 1
+            v2_r = py_base + (i + 1) * 4 + 3
+            v3_r = py_base + (i + 1) * 4 + 2
+            all_faces.append([v0_r, v3_r, v2_r, v1_r])
+
+    # 3. Vertical Endplates (Crimson Red)
+    n_ep_y = 10
+    n_ep_z = 8
+    for ep_x in (-0.835, 0.835):
+        ep_base = len(all_verts)
+        for i in range(n_ep_y + 1):
+            yf = i / n_ep_y
+            y = -1.900 * (1 - yf) + (-2.280) * yf
+            for j in range(n_ep_z + 1):
+                zf = j / n_ep_z
+                z = 0.960 * (1 - zf) + 1.140 * zf
+                all_verts.append([round(float(ep_x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(n_ep_y):
+            for j in range(n_ep_z):
+                v0 = ep_base + i * (n_ep_z + 1) + j
+                v1 = v0 + 1
+                v2 = ep_base + (i + 1) * (n_ep_z + 1) + (j + 1)
+                v3 = ep_base + (i + 1) * (n_ep_z + 1) + j
+                if ep_x < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+    return all_verts, all_faces
+
+
+def build_rear_wing(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Rear_Wing inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_rear_wing_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Rear_Wing_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Rear_Wing", mesh)
+
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+    if "MAT_GTR_Crimson_Accent" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Crimson_Accent"])
+
+    bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+    bev.width = 0.004
+    bev.segments = 2
+    bev.profile = 0.5
+    bev.harden_normals = True
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    col = collections.get("02_Aero_Fascia", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
