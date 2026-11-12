@@ -2716,23 +2716,24 @@ async def reconcile_reference_datums(
 
 @mcp.tool()
 async def validate_phase_gate(
-    phase_id: int,
+    phase_id: int | str = 1,
     evidence: dict[str, Any] | None = None,
 ) -> str:
     """Validate pipeline phase gate against the 6-stage Reference-to-Asset Pipeline v2 Contract.
 
     Enforces Section 14 (Phase Gate Checklist & Enforcement Summary).
-    Phase 1: Multi-View Reference Intake & Datum Alignment
-    Phase 2: Component Breakdown & Modeling Strategy Selection
-    Phase 3: Primary Form Sub-D Cage & Visual Hull Carving (Spec-Clay + Topology)
-    Phase 4: Secondary Assemblies & Precision Cutouts (Wheelhouse Recess + Boolean)
-    Phase 5: Detailing, Mechanical Hardware & Accessories (True 3D Depth)
-    Phase 6: Multi-Material PBR Shading, Decals & Studio QA Gate
+    Supports numeric phases 1-6 or Geometry Engineering skill aliases G0-G6:
+    Phase 1 / G0, G1: Multi-View Reference Intake & Datum Alignment
+    Phase 2 / G2: Component Breakdown & Modeling Strategy Selection
+    Phase 3 / G3: Primary Form Sub-D Cage & Visual Hull Carving (Spec-Clay + Topology)
+    Phase 4 / G4: Secondary Assemblies & Precision Cutouts (Wheelhouse Recess + Boolean)
+    Phase 5 / G5: Detailing, Mechanical Hardware & Accessories (True 3D Depth)
+    Phase 6 / G6: Multi-Material PBR Shading, Decals & Studio QA Gate
 
     Advancing to a subsequent phase without passing prior gates is strictly blocked.
 
     Parameters:
-    - phase_id: Phase number to validate (1 to 6)
+    - phase_id: Phase number (1 to 6) or gate string alias ('G0'-'G6', 'Phase 1'-'Phase 6')
     - evidence: Dictionary containing required verification keys for this phase
     """
     from .pipeline_gates import validate_phase_gate as _validate
