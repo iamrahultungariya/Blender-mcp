@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 from typing import Any, Dict, List, Tuple
+import numpy as np
 
 try:
     import bpy
@@ -254,3 +255,160 @@ def setup_gtr_materials() -> Dict[str, Any]:
         built_materials[mat_name] = mat
 
     return built_materials
+
+
+# ==============================================================================
+# 3. Component Assembly Generators: Body Structure (Phase 2)
+# ==============================================================================
+
+def generate_body_shell_mesh_data(
+    ny: int = 49,
+    nu: int = 49
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Body_Shell."""
+    y_stations = np.linspace(0.88, -2.15, ny)
+    verts: List[List[float]] = []
+    faces: List[List[int]] = []
+
+    # 1. Outer Aerodynamic Shell
+    for i, y in enumerate(y_stations):
+        t = i / (ny - 1)
+        if y >= 0.25:
+            # Cowl to A-pillar top
+            tt = (y - 0.25) / (0.88 - 0.25)
+            z_top = 1.15 * (1 - tt) + 0.78 * tt
+            w_top = 0.62 * (1 - tt) + 0.74 * tt
+        elif y >= -0.40:
+            # Roof peak
+            z_top = 1.180
+            w_top = 0.60
+        elif y >= -1.50:
+            # Fastback canopy slope
+            tt = (y - (-1.50)) / (-0.40 - (-1.50))
+            z_top = 0.85 * (1 - tt) + 1.180 * tt
+            w_top = 0.72 * (1 - tt) + 0.60 * tt
+        else:
+            # Rear decklid to ducktail
+            tt = (y - (-2.15)) / (-1.50 - (-2.15))
+            z_top = 0.86 * (1 - tt) + 0.85 * tt
+            w_top = 0.76 * (1 - tt) + 0.72 * tt
+
+        z_sill = 0.12
+        w_sill = 0.84
+
+        # Side scoop pinch ahead of rear wheels
+        if -1.10 <= y <= -0.45:
+            scoop_factor = math.sin((y - (-1.10)) / 0.65 * math.pi)
+            w_belt = 0.91 - 0.10 * scoop_factor
+        else:
+            w_belt = 0.91
+        z_belt = 0.70 + 0.04 * math.sin(t * math.pi)
+
+        ring = []
+        for j in range(nu):
+            s = j / (nu - 1)  # 0: left sill to 1: right sill
+            if s <= 0.25:
+                # Left rocker sill to left beltline
+                u = s / 0.25
+                x = -w_sill * (1 - u) + (-w_belt) * u
+                z = z_sill * (1 - u) + z_belt * u
+            elif s <= 0.5:
+                # Left beltline to roof center
+                u = (s - 0.25) / 0.25
+                x = -w_belt * (1 - u) + 0.0 * u
+                bub = 0.015 * math.sin(u * math.pi) if z_top > 0.95 else 0.0
+                z = z_belt * (1 - u) + z_top * u + bub
+            elif s <= 0.75:
+                # Roof center to right beltline
+                u = (s - 0.5) / 0.25
+                x = 0.0 * (1 - u) + w_belt * u
+                bub = 0.015 * math.sin((1 - u) * math.pi) if z_top > 0.95 else 0.0
+                z = z_top * (1 - u) + z_belt * u + bub
+            else:
+                # Right beltline to right rocker sill
+                u = (s - 0.75) / 0.25
+                x = w_belt * (1 - u) + w_sill * u
+                z = z_belt * (1 - u) + z_sill * u
+
+            ring.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+        verts.extend(ring)
+
+    # Shell Quad Faces
+    for i in range(ny - 1):
+        for j in range(nu - 1):
+            i0 = i * nu + j
+            i1 = i0 + 1
+            i2 = (i + 1) * nu + (j + 1)
+            i3 = (i + 1) * nu + j
+            faces.append([i0, i1, i2, i3])
+
+    # 2. Underbody Floor Pan (connecting left sill to right sill at Z=0.10)
+    floor_start_idx = len(verts)
+    n_floor = 17
+    for i, y in enumerate(y_stations):
+        w_sill = 0.84
+        for k in range(n_floor):
+            sf = k / (n_floor - 1)
+            xf = -w_sill * (1 - sf) + w_sill * sf
+            zf = 0.100
+            verts.append([round(float(xf), 4), round(float(y), 4), round(float(zf), 4)])
+
+    for i in range(ny - 1):
+        for k in range(n_floor - 1):
+            f0 = floor_start_idx + i * n_floor + k
+            f1 = f0 + 1
+            f2 = floor_start_idx + (i + 1) * n_floor + (k + 1)
+            f3 = floor_start_idx + (i + 1) * n_floor + k
+            faces.append([f0, f3, f2, f1])  # outward downward normal
+
+    return verts, faces
+
+
+def build_body_shell(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Body_Shell inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_body_shell_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Body_Shell_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    # Smooth shading
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Body_Shell", mesh)
+
+    # Materials
+    if "MAT_GTR_Paint_Gunmetal" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Paint_Gunmetal"])
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+
+    # Modifiers
+    bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+    bev.width = 0.006
+    bev.segments = 2
+    bev.profile = 0.5
+    bev.harden_normals = True
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    # Link to collection
+    col = collections.get("01_Body_Structure", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
