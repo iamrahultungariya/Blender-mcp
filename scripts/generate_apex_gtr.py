@@ -1699,3 +1699,291 @@ def build_master_wheel(materials: Dict[str, Any], collections: Dict[str, Any]) -
         instanced_objects.append(obj)
 
     return instanced_objects
+
+
+# ==============================================================================
+# 11. Component Assembly Generators: Lighting Systems (Phase 4)
+# ==============================================================================
+
+def generate_headlights_mesh_data(
+    ny_hl: int = 16,
+    nx_hl: int = 12
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Headlights."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    for side in (-1, 1):
+        # 1. Dark Housing Cavity
+        hl_base = len(all_verts)
+        for i in range(ny_hl + 1):
+            yf = i / ny_hl
+            y = 1.920 * (1 - yf) + 2.160 * yf
+            z_bot = 0.480 + 0.020 * yf
+            z_top = 0.600 + 0.040 * yf
+
+            for j in range(nx_hl + 1):
+                xf = j / nx_hl
+                x = side * (0.870 * (1 - xf) + 0.620 * xf)
+                z = z_bot * (1 - xf) + z_top * xf
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(ny_hl):
+            for j in range(nx_hl):
+                v0 = hl_base + i * (nx_hl + 1) + j
+                v1 = v0 + 1
+                v2 = hl_base + (i + 1) * (nx_hl + 1) + (j + 1)
+                v3 = hl_base + (i + 1) * (nx_hl + 1) + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+        # 2. Dual Projector LED Lenses (outer & inner)
+        lens_centers = [
+            (side * 0.780, 2.020, 0.540),
+            (side * 0.680, 2.090, 0.550),
+        ]
+        n_l_u = 12
+        n_l_v = 8
+        for lx, ly, lz in lens_centers:
+            lens_base = len(all_verts)
+            for lu in range(n_l_u + 1):
+                ang = lu * 2.0 * math.pi / n_l_u
+                for lv in range(n_l_v + 1):
+                    vf = lv / n_l_v
+                    r_l = 0.038 * math.sin(vf * (math.pi / 2.0))
+                    d_y = 0.020 * math.cos(vf * (math.pi / 2.0))
+                    all_verts.append([
+                        round(float(side * (abs(lx) + math.cos(ang) * r_l)), 4),
+                        round(float(ly + d_y), 4),
+                        round(float(lz + math.sin(ang) * r_l), 4)
+                    ])
+
+            for lu in range(n_l_u):
+                for lv in range(n_l_v):
+                    v0 = lens_base + lu * (n_l_v + 1) + lv
+                    v1 = v0 + 1
+                    v2 = lens_base + (lu + 1) * (n_l_v + 1) + (lv + 1)
+                    v3 = lens_base + (lu + 1) * (n_l_v + 1) + lv
+                    all_faces.append([v0, v1, v2, v3])
+
+        # 3. Z-Pattern DRL Ribbon
+        drl_base = len(all_verts)
+        n_drl = 20
+        for di in range(n_drl + 1):
+            df = di / n_drl
+            xd = side * (0.875 * (1 - df) + 0.630 * df)
+            yd = 1.930 * (1 - df) + 2.155 * df
+            zd = 0.605 * (1 - df) + 0.635 * df
+            for thick in (0.0, -0.015):
+                all_verts.append([round(float(xd), 4), round(float(yd), 4), round(float(zd + thick), 4)])
+
+        for di in range(n_drl):
+            v0 = drl_base + di * 2
+            v1 = v0 + 1
+            v2 = drl_base + (di + 1) * 2 + 1
+            v3 = drl_base + (di + 1) * 2
+            all_faces.append([v0, v1, v2, v3])
+
+        # 4. Clear Polycarbonate Cover Lens
+        cov_base = len(all_verts)
+        for i in range(ny_hl + 1):
+            yf = i / ny_hl
+            y = 1.925 * (1 - yf) + 2.165 * yf
+            z_bot = 0.485 + 0.020 * yf
+            z_top = 0.605 + 0.040 * yf
+            for j in range(nx_hl + 1):
+                xf = j / nx_hl
+                x = side * (0.875 * (1 - xf) + 0.625 * xf)
+                z = z_bot * (1 - xf) + z_top * xf
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(ny_hl):
+            for j in range(nx_hl):
+                v0 = cov_base + i * (nx_hl + 1) + j
+                v1 = v0 + 1
+                v2 = cov_base + (i + 1) * (nx_hl + 1) + (j + 1)
+                v3 = cov_base + (i + 1) * (nx_hl + 1) + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+    return all_verts, all_faces
+
+
+def generate_tail_lights_mesh_data(
+    nx_tl: int = 20,
+    nz_tl: int = 12
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Tail_Lights."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    for side in (-1, 1):
+        # 1. Housing
+        tl_base = len(all_verts)
+        for i in range(nx_tl + 1):
+            xf = i / nx_tl
+            x = side * (0.350 * (1 - xf) + 0.860 * xf)
+            sweep = 0.050 * (xf ** 1.5)
+            y = -2.190 - sweep
+
+            for j in range(nz_tl + 1):
+                zf = j / nz_tl
+                z = 0.600 * (1 - zf) + 0.720 * zf
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(nx_tl):
+            for j in range(nz_tl):
+                v0 = tl_base + i * (nz_tl + 1) + j
+                v1 = v0 + 1
+                v2 = tl_base + (i + 1) * (nz_tl + 1) + (j + 1)
+                v3 = tl_base + (i + 1) * (nz_tl + 1) + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+        # 2. Emissive Ribbon Lightbar
+        rib_base = len(all_verts)
+        n_rib = 18
+        for i in range(n_rib + 1):
+            rf = i / n_rib
+            x = side * (0.360 * (1 - rf) + 0.850 * rf)
+            sweep = 0.050 * (rf ** 1.5)
+            y = -2.195 - sweep
+            for thick in (0.015, -0.015):
+                z = 0.660 + thick
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(n_rib):
+            v0 = rib_base + i * 2
+            v1 = v0 + 1
+            v2 = rib_base + (i + 1) * 2 + 1
+            v3 = rib_base + (i + 1) * 2
+            if side < 0:
+                all_faces.append([v0, v1, v2, v3])
+            else:
+                all_faces.append([v0, v3, v2, v1])
+
+        # 3. Outer Smoked Lens Cover
+        lens_base = len(all_verts)
+        for i in range(nx_tl + 1):
+            xf = i / nx_tl
+            x = side * (0.350 * (1 - xf) + 0.860 * xf)
+            sweep = 0.050 * (xf ** 1.5)
+            y = -2.200 - sweep
+            for j in range(nz_tl + 1):
+                zf = j / nz_tl
+                z = 0.600 * (1 - zf) + 0.720 * zf
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(nx_tl):
+            for j in range(nz_tl):
+                v0 = lens_base + i * (nz_tl + 1) + j
+                v1 = v0 + 1
+                v2 = lens_base + (i + 1) * (nz_tl + 1) + (j + 1)
+                v3 = lens_base + (i + 1) * (nz_tl + 1) + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+    # 4. Center Connecting Lightbar across trunk
+    c_base = len(all_verts)
+    n_c_x = 16
+    for i in range(n_c_x + 1):
+        cf = i / n_c_x
+        x = -0.350 * (1 - cf) + 0.350 * cf
+        for thick in (0.015, -0.015):
+            z = 0.660 + thick
+            all_verts.append([round(float(x), 4), -2.195, round(float(z), 4)])
+
+    for i in range(n_c_x):
+        v0 = c_base + i * 2
+        v1 = v0 + 1
+        v2 = c_base + (i + 1) * 2 + 1
+        v3 = c_base + (i + 1) * 2
+        all_faces.append([v0, v1, v2, v3])
+
+    return all_verts, all_faces
+
+
+def build_headlights(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Headlights inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_headlights_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Headlights_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Headlights", mesh)
+
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+    if "MAT_GTR_LED_Emissive" in materials:
+        obj.data.materials.append(materials["MAT_GTR_LED_Emissive"])
+    if "MAT_GTR_Automotive_Glass" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Automotive_Glass"])
+
+    col = collections.get("04_Lighting", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
+
+
+def build_tail_lights(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Tail_Lights inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_tail_lights_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Tail_Lights_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Tail_Lights", mesh)
+
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+    if "MAT_GTR_Tail_Emissive" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Tail_Emissive"])
+    if "MAT_GTR_Automotive_Glass" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Automotive_Glass"])
+
+    col = collections.get("04_Lighting", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
