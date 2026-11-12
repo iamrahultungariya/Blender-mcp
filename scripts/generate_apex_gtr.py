@@ -1114,3 +1114,200 @@ def build_side_skirts(materials: Dict[str, Any], collections: Dict[str, Any]) ->
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 8. Component Assembly Generators: Rear Diffuser & Exhaust (Phase 3)
+# ==============================================================================
+
+def generate_rear_diffuser_mesh_data(
+    ny_d: int = 30,
+    nx_d: int = 32,
+    n_tun_y: int = 22,
+    n_tun_x: int = 28
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Rear_Diffuser_Exhaust."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    # 1. Rear Bumper Valence (y from -2.00 to -2.28)
+    v_base = len(all_verts)
+    for i in range(ny_d + 1):
+        yf = i / ny_d
+        y_val = -2.000 * (1 - yf) + (-2.270) * yf
+        z_bot = 0.260 * (1 - yf) + 0.300 * yf
+        z_top = 0.650
+
+        for j in range(nx_d + 1):
+            xf = j / nx_d
+            x = -0.900 * (1 - xf) + 0.900 * xf
+            y_curve = 0.040 * (1.0 - (x / 0.900) ** 2)
+            y = y_val - y_curve
+            z = z_bot * (1 - yf) + z_top * yf
+            all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+    for i in range(ny_d):
+        for j in range(nx_d):
+            v0 = v_base + i * (nx_d + 1) + j
+            v1 = v0 + 1
+            v2 = v_base + (i + 1) * (nx_d + 1) + (j + 1)
+            v3 = v_base + (i + 1) * (nx_d + 1) + j
+            all_faces.append([v0, v3, v2, v1])
+
+    # 2. Diffuser Venturi Floor (upswept from z=0.08 to z=0.26, y from -1.80 to -2.28)
+    tun_base = len(all_verts)
+    for i in range(n_tun_y + 1):
+        yf = i / n_tun_y
+        y = -1.800 * (1 - yf) + (-2.280) * yf
+        z = 0.080 + 0.180 * (yf ** 1.6)
+
+        for j in range(n_tun_x + 1):
+            xf = j / n_tun_x
+            x = -0.740 * (1 - xf) + 0.740 * xf
+            all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+    for i in range(n_tun_y):
+        for j in range(n_tun_x):
+            v0 = tun_base + i * (n_tun_x + 1) + j
+            v1 = v0 + 1
+            v2 = tun_base + (i + 1) * (n_tun_x + 1) + (j + 1)
+            v3 = tun_base + (i + 1) * (n_tun_x + 1) + j
+            all_faces.append([v0, v1, v2, v3])
+
+    # 3. 6 Vertical Aerodynamic Strakes
+    strake_xs = [-0.600, -0.360, -0.120, 0.120, 0.360, 0.600]
+    n_st_y = 12
+    for sx in strake_xs:
+        st_base = len(all_verts)
+        for i in range(n_st_y + 1):
+            yf = i / n_st_y
+            y = -1.850 * (1 - yf) + (-2.285) * yf
+            z_top = 0.080 + 0.180 * (yf ** 1.6)
+            z_bot = 0.080
+            for layer in (0, 1):
+                x = sx + (-0.004 if layer == 0 else 0.004)
+                for kv in (0, 1):
+                    z = z_bot if kv == 0 else z_top
+                    all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(n_st_y):
+            # Left face
+            v0 = st_base + i * 4
+            v1 = v0 + 1
+            v2 = st_base + (i + 1) * 4 + 1
+            v3 = st_base + (i + 1) * 4
+            all_faces.append([v0, v1, v2, v3])
+            # Right face
+            v0_r = st_base + i * 4 + 2
+            v1_r = v0_r + 1
+            v2_r = st_base + (i + 1) * 4 + 3
+            v3_r = st_base + (i + 1) * 4 + 2
+            all_faces.append([v0_r, v3_r, v2_r, v1_r])
+
+    # 4. Quad Titanium Exhaust Tips (cylinders)
+    tip_configs = [-0.550, -0.420, 0.420, 0.550]
+    n_seg = 24
+    for tx in tip_configs:
+        ex_base = len(all_verts)
+        tz = 0.320
+        r_tip = 0.048
+        for yi, y_ex in enumerate([-2.140, -2.210, -2.280]):
+            for s in range(n_seg):
+                ang = s * 2.0 * math.pi / n_seg
+                x = tx + math.cos(ang) * r_tip
+                z = tz + math.sin(ang) * r_tip
+                all_verts.append([round(float(x), 4), round(float(y_ex), 4), round(float(z), 4)])
+
+        for ring in (0, 1):
+            r_offset = ex_base + ring * n_seg
+            for s in range(n_seg):
+                s_next = (s + 1) % n_seg
+                v0 = r_offset + s
+                v1 = r_offset + s_next
+                v2 = r_offset + n_seg + s_next
+                v3 = r_offset + n_seg + s
+                all_faces.append([v0, v1, v2, v3])
+
+    # 5. Central F1 Rain Light & Red Perimeter Trim
+    f1_base = len(all_verts)
+    n_f1 = 8
+    for fi in range(n_f1 + 1):
+        for fj in range(n_f1 + 1):
+            xf = -0.060 + (fi / n_f1) * 0.120
+            zf = 0.220 + (fj / n_f1) * 0.080
+            all_verts.append([round(float(xf), 4), -2.275, round(float(zf), 4)])
+
+    for fi in range(n_f1):
+        for fj in range(n_f1):
+            v0 = f1_base + fi * (n_f1 + 1) + fj
+            v1 = v0 + 1
+            v2 = f1_base + (fi + 1) * (n_f1 + 1) + (fj + 1)
+            v3 = f1_base + (fi + 1) * (n_f1 + 1) + fj
+            all_faces.append([v0, v3, v2, v1])
+
+    # Red trim edge strip along lower diffuser edge
+    trim_base = len(all_verts)
+    n_tr = 32
+    for ti in range(n_tr + 1):
+        xt = -0.800 + (ti / n_tr) * 1.600
+        all_verts.append([round(float(xt), 4), -2.285, 0.080])
+        all_verts.append([round(float(xt), 4), -2.285, 0.095])
+
+    for ti in range(n_tr):
+        v0 = trim_base + ti * 2
+        v1 = v0 + 1
+        v2 = trim_base + (ti + 1) * 2 + 1
+        v3 = trim_base + (ti + 1) * 2
+        all_faces.append([v0, v1, v2, v3])
+
+    return all_verts, all_faces
+
+
+def build_rear_diffuser_exhaust(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Rear_Diffuser_Exhaust inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_rear_diffuser_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Rear_Diffuser_Exhaust_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Rear_Diffuser_Exhaust", mesh)
+
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+    if "MAT_GTR_Crimson_Accent" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Crimson_Accent"])
+    if "MAT_GTR_Brake_Steel" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Brake_Steel"])
+    if "MAT_GTR_Tail_Emissive" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Tail_Emissive"])
+
+    bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+    bev.width = 0.005
+    bev.segments = 2
+    bev.profile = 0.5
+    bev.harden_normals = True
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    col = collections.get("02_Aero_Fascia", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
