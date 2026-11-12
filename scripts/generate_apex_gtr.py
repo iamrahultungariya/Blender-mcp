@@ -558,3 +558,137 @@ def build_widebody_fenders(materials: Dict[str, Any], collections: Dict[str, Any
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 4. Component Assembly Generators: Glass Canopy (Phase 2)
+# ==============================================================================
+
+def generate_glass_mesh_data(
+    ny_ws: int = 20,
+    nx_ws: int = 18,
+    ny_side: int = 16,
+    nz_side: int = 12,
+    ny_rear: int = 20,
+    nx_rear: int = 18
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Glass_Canopy."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    # 1. Front Windshield (cowl y=0.88 to header y=0.25)
+    ws_base = len(all_verts)
+    for i in range(ny_ws + 1):
+        yf = i / ny_ws
+        y = 0.880 * (1 - yf) + 0.250 * yf
+        z_base = 0.780 * (1 - yf) + 1.140 * yf
+        w = 0.720 * (1 - yf) + 0.600 * yf
+
+        for j in range(nx_ws + 1):
+            xf = j / nx_ws
+            x = -w * (1 - xf) + w * xf
+            arc = math.cos((xf - 0.5) * math.pi) * 0.040
+            all_verts.append([round(float(x), 4), round(float(y + arc * 0.3), 4), round(float(z_base + arc * 0.5), 4)])
+
+    for i in range(ny_ws):
+        for j in range(nx_ws):
+            v0 = ws_base + i * (nx_ws + 1) + j
+            v1 = v0 + 1
+            v2 = ws_base + (i + 1) * (nx_ws + 1) + (j + 1)
+            v3 = ws_base + (i + 1) * (nx_ws + 1) + j
+            all_faces.append([v0, v1, v2, v3])
+
+    # 2. Frameless Door Windows (Left & Right)
+    for side in (-1, 1):
+        side_base = len(all_verts)
+        for i in range(ny_side + 1):
+            yf = i / ny_side
+            y = 0.250 * (1 - yf) + (-0.650) * yf
+            z_top = 1.140 * (1 - yf) + 1.170 * yf
+            z_bot = 0.700
+
+            for j in range(nz_side + 1):
+                zf = j / nz_side
+                z = z_bot * (1 - zf) + z_top * zf
+                w = 0.750 * (1 - zf) + 0.600 * zf
+                x = side * w
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(ny_side):
+            for j in range(nz_side):
+                v0 = side_base + i * (nz_side + 1) + j
+                v1 = v0 + 1
+                v2 = side_base + (i + 1) * (nz_side + 1) + (j + 1)
+                v3 = side_base + (i + 1) * (nz_side + 1) + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+    # 3. Fastback Rear Hatch Glass (y=-0.65 to y=-1.50)
+    rear_base = len(all_verts)
+    for i in range(ny_rear + 1):
+        yf = i / ny_rear
+        y = -0.650 * (1 - yf) + (-1.500) * yf
+        z_base = 1.160 * (1 - yf) + 0.850 * yf
+        w = 0.580 * (1 - yf) + 0.680 * yf
+
+        for j in range(nx_rear + 1):
+            xf = j / nx_rear
+            x = -w * (1 - xf) + w * xf
+            arc = math.cos((xf - 0.5) * math.pi) * 0.018
+            all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z_base + arc), 4)])
+
+    for i in range(ny_rear):
+        for j in range(nx_rear):
+            v0 = rear_base + i * (nx_rear + 1) + j
+            v1 = v0 + 1
+            v2 = rear_base + (i + 1) * (nx_rear + 1) + (j + 1)
+            v3 = rear_base + (i + 1) * (nx_rear + 1) + j
+            all_faces.append([v0, v1, v2, v3])
+
+    return all_verts, all_faces
+
+
+def build_glass_canopy(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Glass_Canopy inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_glass_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Glass_Canopy_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Glass_Canopy", mesh)
+
+    if "MAT_GTR_Automotive_Glass" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Automotive_Glass"])
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+
+    # Solidify modifier for glass refraction depth
+    sol = obj.modifiers.new("Auto_Solidify", 'SOLIDIFY')
+    sol.thickness = 0.004
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    col = collections.get("03_Glass_and_Mirrors", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
