@@ -2344,6 +2344,7 @@ async def clas_loft_splines(
     resolution: int = 32,
     closed: bool = True,
     partition_id: str = "",
+    longitudinal_samples: int = 1,
 ) -> str:
     """Loft cross-section profile splines into a watertight hull (fuselage, chassis) via C-RNA.
     
@@ -2353,6 +2354,7 @@ async def clas_loft_splines(
     - resolution: Radial point resolution
     - closed: Whether profile rings are closed
     - partition_id: Target partition
+    - longitudinal_samples: Interpolation steps between stations (>1 enables smooth G1 Catmull-Rom spline lofting)
     """
     blender = get_blender_connection()
     res = blender.send_command("clas_loft_splines", {
@@ -2361,6 +2363,7 @@ async def clas_loft_splines(
         "resolution": resolution,
         "closed": closed,
         "partition_id": partition_id,
+        "longitudinal_samples": longitudinal_samples,
     })
     return json.dumps(res, indent=2)
 
@@ -2457,14 +2460,20 @@ async def export_game_asset(
     filepath: str,
     target_triangle_budget: int = None,
     file_format: str = "glb",
+    auto_decimate: bool = False,
+    auto_uv: bool = True,
+    enforce_uv: bool = False,
 ) -> str:
-    """Normalize pivot to bottom-center (0,0,0), apply transforms, optimize quad/tri budget, and export.
+    """Normalize pivot to bottom-center (0,0,0), apply transforms, optimize quad/tri budget, enforce UV, and export.
     
     Parameters:
     - target_object_or_partition: Object or partition collection to export
     - filepath: Destination export file path
     - target_triangle_budget: Optional polygon reduction target
     - file_format: 'glb' or 'fbx'
+    - auto_decimate: If True and mesh exceeds budget, automatically apply Decimate modifier to meet target
+    - auto_uv: If True and mesh lacks UV coordinates, automatically generate UVs before export
+    - enforce_uv: If True and mesh lacks UV coordinates, abort export per Iron Law 4
     """
     blender = get_blender_connection()
     res = blender.send_command("export_game_asset", {
@@ -2472,8 +2481,277 @@ async def export_game_asset(
         "filepath": filepath,
         "triangle_budget": target_triangle_budget,
         "format": file_format,
+        "auto_decimate": auto_decimate,
+        "auto_uv": auto_uv,
+        "enforce_uv": enforce_uv,
     })
     return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def apply_uv_unwrap(
+    target_object: str,
+    angle_limit_deg: float = 66.0,
+    island_margin: float = 0.02,
+) -> str:
+    """Apply Smart UV Project to ensure mesh has clean, non-overlapping UV layout for texturing & game engines.
+
+    Parameters:
+    - target_object: Name of target mesh object to unwrap
+    - angle_limit_deg: Lower angles produce more UV islands, higher angles produce fewer distorted islands (default 66.0)
+    - island_margin: Margin between UV islands to prevent texture bleeding (default 0.02)
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("apply_uv_unwrap", {
+        "target_object": target_object,
+        "angle_limit_deg": angle_limit_deg,
+        "island_margin": island_margin,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_bezier_tube(
+    name: str,
+    points: list[list[float]],
+    radius: float = 0.02,
+    resolution: int = 12,
+    fill_caps: bool = True,
+    collection_name: str = None,
+) -> str:
+    """Create a non-destructive 3D curve tube for cables, pipes, and aerodynamic trims (Ryan King workflow).
+
+    Parameters:
+    - name: Name of the curve object
+    - points: List of 3D coordinates [[x,y,z], ...]
+    - radius: Cross-section bevel radius in meters
+    - resolution: Radial segment resolution (default 12)
+    - fill_caps: Close the open ends of the tube
+    - collection_name: Optional target collection
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("create_bezier_tube", {
+        "name": name,
+        "points": points,
+        "radius": radius,
+        "resolution": resolution,
+        "fill_caps": fill_caps,
+        "collection_name": collection_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def setup_subdivision_cage(
+    object_name: str,
+    levels: int = 2,
+    render_levels: int = 2,
+    bevel_width: float = 0.008,
+    weighted_normal: bool = True,
+) -> str:
+    """Configure modern Aryan 3D / Isto Inc low-poly subdivision cage workflow.
+
+    Enforces Catmull-Clark subdivision, controlled mechanical edge bevels, and weighted normal shading.
+
+    Parameters:
+    - object_name: Target mesh object
+    - levels: Viewport subdivision levels (default 2)
+    - render_levels: Render subdivision levels (default 2)
+    - bevel_width: Mechanical highlight edge bevel width in meters (0 to disable)
+    - weighted_normal: Add WeightedNormal modifier with keep_sharp=True
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("setup_subdivision_cage", {
+        "object_name": object_name,
+        "levels": levels,
+        "render_levels": render_levels,
+        "bevel_width": bevel_width,
+        "weighted_normal": weighted_normal,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def crop_reference_region(
+    image_path: str,
+    region_name: str = "nose_grille",
+    crop_box: list[float] = None,
+    output_path: str = None,
+) -> str:
+    """Extract named visual region crop from reference image to eliminate hallucination (Section 2.8).
+
+    Presets available: 'nose_grille', 'hood_windshield', 'front_wheel_arch', 'side_flank', 'rear_fascia'.
+
+    Parameters:
+    - image_path: Path to the reference blueprint or turnaround image
+    - region_name: Named preset region to crop
+    - crop_box: Optional custom normalized bounding box [ymin, xmin, ymax, xmax]
+    - output_path: Optional destination path for the cropped image
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("crop_reference_region", {
+        "image_path": image_path,
+        "region_name": region_name,
+        "crop_box": crop_box,
+        "output_path": output_path,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def get_component_tree(
+    archetype: str = "VEHICLE",
+) -> str:
+    """Return formal 4-level component tree decomposition (Asset -> System -> Component -> Detail).
+
+    Enforces Section 2.7 AI design reasoning: returns recommended modeling strategy per component
+    ('subdivision_cage', 'bezier_curve', 'boolean_bevel', 'loft'), interfaces, and datums.
+
+    Parameters:
+    - archetype: 'VEHICLE', 'AIRCRAFT', 'PROP_HARD_SURFACE', 'ARCHITECTURE'
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("get_component_tree", {
+        "archetype": archetype,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def audit_mesh_topology(
+    object_name: str,
+    auto_repair: bool = False,
+) -> str:
+    """Audit Blender mesh topology for non-manifold edges, loose vertices, and watertightness.
+
+    Enforces Section 13.3 and D4 of the Reference-to-Asset Pipeline v2 Contract.
+    Reports non-manifold edges, open boundary edges, loose vertices, and watertight status.
+
+    Parameters:
+    - object_name: Target mesh object to audit
+    - auto_repair: Automatically remove doubles, delete loose vertices, and recalculate normals
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("audit_mesh_topology", {
+        "object_name": object_name,
+        "auto_repair": auto_repair,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def inspect_specular_clay_pass(
+    object_name: str | None = None,
+    mode: str = "STUDIO_CLAY",
+    filepath: str | None = None,
+) -> str:
+    """Perform non-destructive specular clay or zebra reflection analysis for curvature continuity.
+
+    Enforces Section 12 and D5 of the Reference-to-Asset Pipeline v2 Contract.
+    Temporarily overrides materials with high-specular neutral clay (roughness=0.08, clearcoat=1.0)
+    or zebra reflection stripes to diagnose surface dents, ripples, and curvature pinch points,
+    captures a 4-quadrant offscreen view, and restores original materials non-destructively.
+
+    Parameters:
+    - object_name: Target mesh object (or None for all visible objects)
+    - mode: 'STUDIO_CLAY' (high-gloss neutral clay) or 'ZEBRA' (reflection wave stripes)
+    - filepath: Optional destination image file path
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("inspect_specular_clay_pass", {
+        "object_name": object_name,
+        "mode": mode,
+        "filepath": filepath,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def get_evaluated_budget_report(
+    target_collection: str | None = None,
+    object_name: str | None = None,
+    target_budget: int | None = None,
+) -> str:
+    """Calculate evaluated geometry budget with active modifiers applied via dependency graph.
+
+    Enforces Section 13.1 and B1 of the Reference-to-Asset Pipeline v2 Contract.
+    Evaluates meshes via bpy.context.evaluated_depsgraph_get() to measure real post-modifier
+    triangle density (Subdivision Surface, Bevel, Solidify, Mirror) vs base cage quads/faces.
+
+    Parameters:
+    - target_collection: Optional collection name to filter objects
+    - object_name: Optional single object name to filter
+    - target_budget: Optional target triangle budget to evaluate against (e.g. 150000)
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("get_evaluated_budget_report", {
+        "target_collection": target_collection,
+        "object_name": object_name,
+        "target_budget": target_budget,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def reconcile_reference_datums(
+    views: list[str] | None = None,
+    archetype: str = "VEHICLE",
+    dimensions: dict[str, float] | None = None,
+) -> str:
+    """Audit multi-view reference alignment, reconcile 3D datums, and build Evidence Matrix.
+
+    Enforces Section 1 and Section 11 of the Reference-to-Asset Pipeline v2 Contract.
+    Flags cross-view discrepancies (e.g. front width != top width) before modeling starts,
+    categorizes features into OBSERVED/INFERRED/DESIGNED, and prevents boxy hallucination.
+
+    Parameters:
+    - views: List of available camera/orthographic views (e.g. ['front', 'side', 'top', 'perspective'])
+    - archetype: Asset archetype ('VEHICLE', 'AMBULANCE', 'VAN', 'SPORTS_CAR', 'PROP')
+    - dimensions: Known or measured dimensions (e.g. {'length': 5.92, 'width': 2.02, 'height': 2.75, 'wheelbase': 3.665})
+    """
+    from .reference_analyzer import reconcile_reference_datums as _reconcile
+    report = _reconcile(views=views, archetype=archetype, dimensions=dimensions)
+    return json.dumps(report, indent=2)
+
+
+@mcp.tool()
+async def validate_phase_gate(
+    phase_id: int,
+    evidence: dict[str, Any] | None = None,
+) -> str:
+    """Validate pipeline phase gate against the 6-stage Reference-to-Asset Pipeline v2 Contract.
+
+    Enforces Section 14 (Phase Gate Checklist & Enforcement Summary).
+    Phase 1: Multi-View Reference Intake & Datum Alignment
+    Phase 2: Component Breakdown & Modeling Strategy Selection
+    Phase 3: Primary Form Sub-D Cage & Visual Hull Carving (Spec-Clay + Topology)
+    Phase 4: Secondary Assemblies & Precision Cutouts (Wheelhouse Recess + Boolean)
+    Phase 5: Detailing, Mechanical Hardware & Accessories (True 3D Depth)
+    Phase 6: Multi-Material PBR Shading, Decals & Studio QA Gate
+
+    Advancing to a subsequent phase without passing prior gates is strictly blocked.
+
+    Parameters:
+    - phase_id: Phase number to validate (1 to 6)
+    - evidence: Dictionary containing required verification keys for this phase
+    """
+    from .pipeline_gates import validate_phase_gate as _validate
+    result = _validate(phase_id=phase_id, evidence=evidence)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def get_pipeline_status() -> str:
+    """Retrieve the current progression status across all 6 reference-to-asset pipeline phases.
+
+    Enforces Section 14 of the Reference-to-Asset Pipeline v2 Contract.
+    Reports pass/fail state for each phase, active phase, and overall export readiness.
+    """
+    from .pipeline_gates import get_pipeline_status as _status
+    result = _status()
+    return json.dumps(result, indent=2)
+
+
 
 
 

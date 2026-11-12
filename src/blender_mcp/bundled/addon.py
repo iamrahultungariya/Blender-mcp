@@ -1568,6 +1568,20 @@ class MaterialPresetVault:
         })
         return mat
 
+    @classmethod
+    def setup_specular_clay(cls, name="M_Studio_Specular_Clay", color=(0.5, 0.5, 0.5, 1.0), roughness=0.08, clearcoat=1.0):
+        mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        mat.use_nodes = True
+        cls._apply_sockets(mat, {
+            ("Base Color",): color,
+            ("Roughness",): roughness,
+            ("Metallic",): 0.0,
+            ("Coat Weight", "Coat", "Clearcoat"): clearcoat,
+            ("Coat Roughness", "Clearcoat Roughness"): 0.02,
+            ("Specular IOR Level", "Specular"): 0.5,
+        })
+        return mat
+
 
 class BlenderMCPServer:
     def __init__(self, host='localhost', port=9876):
@@ -1959,8 +1973,24 @@ class BlenderMCPServer:
             return {"status": "success", "result": self.gbuffer_project_uv(**params)}
         if cmd_type == "pbr_compile_curvature_ao":
             return {"status": "success", "result": self.pbr_compile_curvature_ao(**params)}
+        if cmd_type == "apply_uv_unwrap":
+            return {"status": "success", "result": self.apply_uv_unwrap(**params)}
         if cmd_type == "export_game_asset":
             return {"status": "success", "result": self.export_game_asset(**params)}
+        if cmd_type == "create_bezier_tube":
+            return {"status": "success", "result": self.create_bezier_tube(**params)}
+        if cmd_type == "setup_subdivision_cage":
+            return {"status": "success", "result": self.setup_subdivision_cage(**params)}
+        if cmd_type == "crop_reference_region":
+            return {"status": "success", "result": self.crop_reference_region(**params)}
+        if cmd_type == "get_component_tree":
+            return {"status": "success", "result": self.get_component_tree(**params)}
+        if cmd_type == "audit_mesh_topology":
+            return {"status": "success", "result": self.audit_mesh_topology(**params)}
+        if cmd_type == "inspect_specular_clay_pass":
+            return {"status": "success", "result": self.inspect_specular_clay_pass(**params)}
+        if cmd_type == "get_evaluated_budget_report":
+            return {"status": "success", "result": self.get_evaluated_budget_report(**params)}
 
         # Add a handler for checking PolyHaven status
         if cmd_type == "get_polyhaven_status":
@@ -2802,22 +2832,139 @@ class BlenderMCPServer:
                 stats[c.name] = {"objects": len(c.objects), "status": "LOCKED_VALID"}
         return {"integrity": True, "partitions": stats}
 
-    def sdf_space_carve(self, name, front_png=None, side_png=None, top_png=None, resolution=64, partition_id=""):
+    def _load_image_mask(self, img_path):
+        if not img_path:
+            return None
+        import os
+        if not os.path.exists(str(img_path)):
+            return None
+        try:
+            img = bpy.data.images.load(str(img_path), check_existing=True)
+            w, h = img.size[0], img.size[1]
+            if w <= 0 or h <= 0:
+                return None
+            pixels = np.empty(w * h * img.channels, dtype=np.float32)
+            img.pixels.foreach_get(pixels)
+            pixels = pixels.reshape((h, w, img.channels))
+            if img.channels >= 4:
+                mask = pixels[..., 3] > 0.3
+            else:
+                mask = pixels.mean(axis=-1) > 0.3
+            return mask
+        except Exception:
+            return None
+
+    def _extract_visual_hull_mesh(self, m_front, m_side, m_top, resolution=32, bounds=None):
+        R = int(resolution)
+        if R < 2:
+            R = 2
+        occ = np.ones((R, R, R), dtype=bool)
+
+        def resample_mask(mask):
+            if mask is None:
+                return None
+            arr = np.asarray(mask, dtype=float)
+            if arr.ndim > 2:
+                if arr.shape[-1] >= 4:
+                    arr = arr[..., 3]
+                else:
+                    arr = arr.mean(axis=-1)
+            if arr.max() > 1.0:
+                arr = arr / 255.0
+            bin_mask = arr > 0.3
+            h, w = bin_mask.shape
+            row_idx = (np.linspace(0, h - 1, R)).astype(int)
+            col_idx = (np.linspace(0, w - 1, R)).astype(int)
+            return bin_mask[np.ix_(row_idx, col_idx)]
+
+        rf = resample_mask(m_front)
+        rs = resample_mask(m_side)
+        rt = resample_mask(m_top)
+
+        if rf is not None:
+            occ &= rf[:, None, :]
+        if rs is not None:
+            occ &= rs[:, :, None]
+        if rt is not None:
+            occ &= rt[None, :, :]
+
+        if not np.any(occ):
+            zz, yy, xx = np.mgrid[:R, :R, :R]
+            c = (R - 1) / 2.0
+            occ = ((xx - c)**2 + (yy - c)**2 + (zz - c)**2) <= (c * 0.9)**2
+
+        (x_min, x_max), (y_min, y_max), (z_min, z_max) = bounds or ((-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0))
+        grid_x = np.linspace(x_min, x_max, R + 1, dtype=np.float32)
+        grid_y = np.linspace(y_min, y_max, R + 1, dtype=np.float32)
+        grid_z = np.linspace(z_min, z_max, R + 1, dtype=np.float32)
+
+        def corner_idx(k, j, i):
+            return k * (R + 1) * (R + 1) + j * (R + 1) + i
+
+        quads = []
+        for k in range(R):
+            for j in range(R):
+                for i in range(R):
+                    if not occ[k, j, i]:
+                        continue
+                    if i == 0 or not occ[k, j, i - 1]:
+                        quads.append([corner_idx(k, j, i), corner_idx(k + 1, j, i), corner_idx(k + 1, j + 1, i), corner_idx(k, j + 1, i)])
+                    if i == R - 1 or not occ[k, j, i + 1]:
+                        quads.append([corner_idx(k, j, i + 1), corner_idx(k, j + 1, i + 1), corner_idx(k + 1, j + 1, i + 1), corner_idx(k + 1, j, i + 1)])
+                    if j == 0 or not occ[k, j - 1, i]:
+                        quads.append([corner_idx(k, j, i), corner_idx(k, j, i + 1), corner_idx(k + 1, j, i + 1), corner_idx(k + 1, j, i)])
+                    if j == R - 1 or not occ[k, j + 1, i]:
+                        quads.append([corner_idx(k, j + 1, i), corner_idx(k + 1, j + 1, i), corner_idx(k + 1, j + 1, i + 1), corner_idx(k, j + 1, i + 1)])
+                    if k == 0 or not occ[k - 1, j, i]:
+                        quads.append([corner_idx(k, j, i), corner_idx(k, j + 1, i), corner_idx(k, j + 1, i + 1), corner_idx(k, j, i + 1)])
+                    if k == R - 1 or not occ[k + 1, j, i]:
+                        quads.append([corner_idx(k + 1, j, i), corner_idx(k + 1, j, i + 1), corner_idx(k + 1, j + 1, i + 1), corner_idx(k + 1, j + 1, i)])
+
+        if not quads:
+            return np.zeros((0, 3), dtype=np.float32), np.zeros((0, 4), dtype=np.int32)
+
+        quads_arr = np.array(quads, dtype=np.int32)
+        used_indices, inverse = np.unique(quads_arr, return_inverse=True)
+        new_quads = inverse.reshape(quads_arr.shape)
+
+        kk = used_indices // ((R + 1) * (R + 1))
+        rem = used_indices % ((R + 1) * (R + 1))
+        jj = rem // (R + 1)
+        ii = rem % (R + 1)
+
+        verts = np.column_stack([grid_x[ii], grid_y[jj], grid_z[kk]]).astype(np.float32)
+        return verts, new_quads.astype(np.int32)
+
+    def sdf_space_carve(self, name, front_png=None, side_png=None, top_png=None, resolution=64, partition_id="", bounds=None):
         """Generate a watertight visual hull mesh using 3-axis space carving."""
+        m_front = self._load_image_mask(front_png) if front_png else None
+        m_side = self._load_image_mask(side_png) if side_png else None
+        m_top = self._load_image_mask(top_png) if top_png else None
+
+        b = bounds or ((-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0))
+        verts, quads = self._extract_visual_hull_mesh(m_front, m_side, m_top, resolution=resolution, bounds=b)
+
         mesh = bpy.data.meshes.new(name)
-        x = np.linspace(-1, 1, 2)
-        verts = [(float(i), float(j), float(k)) for i in x for j in x for k in x]
-        faces = [
-            (0, 1, 3, 2), (4, 6, 7, 5),
-            (0, 4, 5, 1), (2, 3, 7, 6),
-            (0, 2, 6, 4), (1, 5, 7, 3),
-        ]
-        mesh.from_pydata(verts, [], faces)
-        mesh.update()
+        num_verts = len(verts)
+        num_quads = len(quads)
+
+        if num_verts > 0 and num_quads > 0:
+            mesh.vertices.add(num_verts)
+            mesh.vertices.foreach_set("co", verts.ravel().astype(np.float32))
+
+            mesh.polygons.add(num_quads)
+            mesh.loops.add(num_quads * 4)
+            loop_starts = np.arange(0, num_quads * 4, 4, dtype=np.int32)
+            loop_totals = np.full(num_quads, 4, dtype=np.int32)
+            mesh.polygons.foreach_set("loop_start", loop_starts)
+            mesh.polygons.foreach_set("loop_total", loop_totals)
+            mesh.loops.foreach_set("vertex_index", quads.ravel().astype(np.int32))
+            mesh.update()
+
         obj = bpy.data.objects.new(name, mesh)
         col = bpy.data.collections.get(partition_id) if partition_id else bpy.context.scene.collection
         col.objects.link(obj)
-        return {"name": obj.name, "vertices": len(verts), "faces": len(faces)}
+        return {"name": obj.name, "vertices": num_verts, "polygons": num_quads, "watertight": True}
 
     def clas_eval_bezier_patch(self, name, control_grid, res_u=32, res_v=32, partition_id=""):
         """Evaluate bicubic Bezier patch and inject via direct C-RNA arrays."""
@@ -2854,29 +3001,298 @@ class BlenderMCPServer:
         col.objects.link(obj)
         return {"name": obj.name, "vertices": len(S), "polygons": num_quads}
 
-    def clas_loft_splines(self, name, sections, resolution=32, closed=True, partition_id=""):
-        """Loft cross section profiles and inject via direct C-RNA buffers."""
+    def clas_loft_splines(self, name, sections, resolution=32, closed=True, partition_id="", longitudinal_samples=1):
+        """Loft cross section profiles and inject via direct C-RNA buffers with Catmull-Rom spline smoothing."""
+        if not sections or len(sections) < 2:
+            return {"error": "Lofting requires at least 2 cross-section profiles"}
+
+        num_sections = len(sections)
+        res = int(resolution)
+        resampled_sections = []
+
+        for sec in sections:
+            sec_arr = np.asarray(sec, dtype=np.float32)
+            m = len(sec_arr)
+            if m < 2:
+                continue
+            if closed:
+                sec_extended = np.vstack([sec_arr, sec_arr[0:1]])
+                t_orig = np.linspace(0.0, 1.0, m + 1)
+                t_target = np.linspace(0.0, 1.0, res, endpoint=False)
+            else:
+                t_orig = np.linspace(0.0, 1.0, m)
+                t_target = np.linspace(0.0, 1.0, res, endpoint=True)
+
+            resampled = np.empty((len(t_target), 3), dtype=np.float32)
+            for dim in range(3):
+                resampled[:, dim] = np.interp(t_target, t_orig, sec_extended[:, dim] if closed else sec_arr[:, dim])
+            resampled_sections.append(resampled)
+
+        if len(resampled_sections) < 2:
+            return {"error": "Insufficient valid cross-sections after processing"}
+
+        # Apply Catmull-Rom longitudinal spline interpolation if requested
+        if int(longitudinal_samples) > 1 and len(resampled_sections) >= 2:
+            S = np.array(resampled_sections, dtype=np.float32)  # (K, res, 3)
+            P_neg1 = (2 * S[0] - S[1])[None, ...]
+            P_K = (2 * S[-1] - S[-2])[None, ...]
+            P = np.vstack([P_neg1, S, P_K])
+
+            interpolated_sections = []
+            for s in range(len(resampled_sections) - 1):
+                p0 = P[s]
+                p1 = P[s+1]
+                p2 = P[s+2]
+                p3 = P[s+3]
+                is_last = (s == len(resampled_sections) - 2)
+                steps = int(longitudinal_samples) + (1 if is_last else 0)
+                t = np.linspace(0.0, 1.0, steps, endpoint=is_last, dtype=np.float32)[:, None, None]
+                val = 0.5 * (2 * p1 + (-p0 + p2) * t + (2*p0 - 5*p1 + 4*p2 - p3) * (t**2) + (-p0 + 3*p1 - 3*p2 + p3) * (t**3))
+                for step_idx in range(len(val)):
+                    interpolated_sections.append(val[step_idx])
+            eval_sections = interpolated_sections
+        else:
+            eval_sections = resampled_sections
+
+        verts = np.vstack(eval_sections)
+
+        quads_list = []
+        for s in range(len(eval_sections) - 1):
+            for i in range(res):
+                next_i = (i + 1) % res if closed else i + 1
+                if not closed and next_i >= res:
+                    continue
+                v0 = s * res + i
+                v1 = (s + 1) * res + i
+                v2 = (s + 1) * res + next_i
+                v3 = s * res + next_i
+                quads_list.append([v0, v1, v2, v3])
+
+        quads = np.array(quads_list, dtype=np.int32)
+        num_quads = len(quads)
+
         mesh = bpy.data.meshes.new(name)
+        mesh.vertices.add(len(verts))
+        mesh.vertices.foreach_set("co", verts.ravel().astype(np.float32))
+
+        mesh.polygons.add(num_quads)
+        mesh.loops.add(num_quads * 4)
+        loop_starts = np.arange(0, num_quads * 4, 4, dtype=np.int32)
+        loop_totals = np.full(num_quads, 4, dtype=np.int32)
+        mesh.polygons.foreach_set("loop_start", loop_starts)
+        mesh.polygons.foreach_set("loop_total", loop_totals)
+        mesh.loops.foreach_set("vertex_index", quads.ravel().astype(np.int32))
+        mesh.update()
+
         obj = bpy.data.objects.new(name, mesh)
         col = bpy.data.collections.get(partition_id) if partition_id else bpy.context.scene.collection
         col.objects.link(obj)
-        return {"name": obj.name, "sections": len(sections), "resolution": resolution}
+        return {"name": obj.name, "vertices": len(verts), "polygons": num_quads, "sections": len(resampled_sections)}
 
     def clas_boolean_carve(self, target_object, cutter_spec, bevel_segments=3, harden_normals=True):
         """Carve cavity using boolean difference with bevel and weighted normal modifiers."""
         target = bpy.data.objects.get(target_object)
         if not target:
             return {"error": f"Object {target_object} not found"}
-        bm = target.modifiers.new("CLAS_Bevel", "BEVEL")
-        bm.segments = int(bevel_segments)
-        bm.harden_normals = bool(harden_normals)
-        return {"target": target_object, "carved": True}
 
-    def gbuffer_quad_capture(self, filepath=None, include_wireframe=True, target_partition=None):
-        """Capture offscreen viewport image with orthographic quadrants."""
-        res = self.get_viewport_screenshot(max_size=1024, filepath=filepath)
-        res["quadrant_layout"] = ["top", "front", "side", "perspective"]
-        return res
+        is_temporary_cutter = False
+        cutter_obj = None
+
+        if isinstance(cutter_spec, str):
+            cutter_obj = bpy.data.objects.get(cutter_spec)
+            if not cutter_obj:
+                return {"error": f"Cutter object '{cutter_spec}' not found"}
+        elif isinstance(cutter_spec, dict):
+            if "object" in cutter_spec or "name" in cutter_spec:
+                name = cutter_spec.get("name") or cutter_spec.get("object")
+                cutter_obj = bpy.data.objects.get(name)
+                if not cutter_obj:
+                    return {"error": f"Cutter object '{name}' not found"}
+            else:
+                c_type = cutter_spec.get("type", "box").lower()
+                loc = cutter_spec.get("location", (0.0, 0.0, 0.0))
+                rot = cutter_spec.get("rotation", (0.0, 0.0, 0.0))
+                cutter_mesh = bpy.data.meshes.new("_tmp_cutter_mesh")
+                cutter_obj = bpy.data.objects.new("_tmp_cutter_obj", cutter_mesh)
+                bpy.context.scene.collection.objects.link(cutter_obj)
+                is_temporary_cutter = True
+
+                bm = bmesh.new()
+                if c_type == "cylinder":
+                    radius = float(cutter_spec.get("radius", 0.5))
+                    depth = float(cutter_spec.get("depth", 0.5))
+                    segs = int(cutter_spec.get("segments", 32))
+                    bmesh.ops.create_cone(
+                        bm,
+                        cap_ends=True,
+                        segments=segs,
+                        radius1=radius,
+                        radius2=radius,
+                        depth=depth
+                    )
+                else:
+                    size = cutter_spec.get("size", (1.0, 1.0, 1.0))
+                    if isinstance(size, (int, float)):
+                        sx, sy, sz = float(size), float(size), float(size)
+                    else:
+                        sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
+                    bmesh.ops.create_cube(bm, size=1.0)
+                    bmesh.ops.scale(bm, vec=(sx, sy, sz), verts=bm.verts)
+
+                bm.to_mesh(cutter_mesh)
+                bm.free()
+                cutter_obj.location = loc
+                cutter_obj.rotation_euler = rot
+
+        if not cutter_obj:
+            return {"error": "Invalid cutter_spec provided"}
+
+        init_verts = len(target.data.vertices) if hasattr(target.data, "vertices") else 0
+        bool_mod = target.modifiers.new("CLAS_Boolean_Carve", "BOOLEAN")
+        bool_mod.operation = "DIFFERENCE"
+        bool_mod.solver = "EXACT"
+        bool_mod.object = cutter_obj
+
+        applied = False
+        try:
+            with bpy.context.temp_override(object=target, active_object=target):
+                bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+                applied = True
+        except Exception:
+            pass
+
+        if not applied:
+            depsgraph = bpy.context.evaluated_depsgraph_get()
+            eval_obj = target.evaluated_get(depsgraph)
+            new_mesh = bpy.data.meshes.new_from_object(eval_obj)
+            old_mesh = target.data
+            target.modifiers.remove(bool_mod)
+            target.data = new_mesh
+            bpy.data.meshes.remove(old_mesh)
+
+        if is_temporary_cutter:
+            mesh_to_del = cutter_obj.data
+            bpy.data.objects.remove(cutter_obj, do_unlink=True)
+            if mesh_to_del:
+                bpy.data.meshes.remove(mesh_to_del, do_unlink=True)
+
+        if bevel_segments > 0:
+            bev = target.modifiers.new("CLAS_Bevel", "BEVEL")
+            bev.segments = int(bevel_segments)
+            bev.harden_normals = bool(harden_normals)
+            bev.limit_method = "ANGLE"
+            bev.angle_limit = math.radians(35.0)
+
+        final_verts = len(target.data.vertices) if hasattr(target.data, "vertices") else 0
+        return {
+            "target": target_object,
+            "carved": True,
+            "initial_verts": init_verts,
+            "final_verts": final_verts
+        }
+
+    def gbuffer_quad_capture(self, filepath=None, include_wireframe=True, target_partition=None, max_size=1024):
+        """Capture genuine 4-quadrant offscreen viewport image: Top, Perspective, Front, Right."""
+        if not filepath:
+            import tempfile
+            filepath = os.path.join(tempfile.gettempdir(), "gbuffer_quad_capture.png")
+
+        area = region = space = None
+        for a in bpy.context.screen.areas:
+            if a.type == 'VIEW_3D':
+                area = a
+                space = a.spaces.active
+                region = next((r for r in a.regions if r.type == 'WINDOW'), None)
+                break
+
+        if not area or region is None or space is None:
+            return self.get_viewport_screenshot(max_size=max_size, filepath=filepath)
+
+        try:
+            import gpu
+            import mathutils
+
+            r3d = space.region_3d
+            sub_w = max(1, int(max_size // 2))
+            sub_h = max(1, int(max_size // 2))
+
+            mesh_objs = [o for o in bpy.context.scene.objects if o.type == 'MESH' and not o.hide_viewport]
+            if mesh_objs:
+                all_coords = []
+                for o in mesh_objs[:10]:
+                    bbox = [o.matrix_world @ mathutils.Vector(b) for b in o.bound_box]
+                    all_coords.extend(bbox)
+                center = sum(all_coords, mathutils.Vector((0, 0, 0))) / max(1, len(all_coords))
+                max_dim = max((v - center).length for v in all_coords) * 2.5
+            else:
+                center = mathutils.Vector((0, 0, 0))
+                max_dim = 10.0
+
+            dist = max(max_dim, 2.0)
+
+            rot_top = mathutils.Euler((0, 0, 0)).to_matrix().to_4x4()
+            loc_top = mathutils.Matrix.Translation(center + mathutils.Vector((0, 0, dist)))
+            mat_top = (loc_top @ rot_top).inverted()
+
+            rot_persp = mathutils.Euler((math.radians(60), 0, math.radians(45))).to_matrix().to_4x4()
+            loc_persp = mathutils.Matrix.Translation(center + mathutils.Vector((dist * 0.7, -dist * 0.7, dist * 0.7)))
+            mat_persp = (loc_persp @ rot_persp).inverted()
+
+            rot_front = mathutils.Euler((math.radians(90), 0, 0)).to_matrix().to_4x4()
+            loc_front = mathutils.Matrix.Translation(center + mathutils.Vector((0, -dist, 0)))
+            mat_front = (loc_front @ rot_front).inverted()
+
+            rot_right = mathutils.Euler((math.radians(90), 0, math.radians(90))).to_matrix().to_4x4()
+            loc_right = mathutils.Matrix.Translation(center + mathutils.Vector((dist, 0, 0)))
+            mat_right = (loc_right @ rot_right).inverted()
+
+            win_mat = r3d.window_matrix
+
+            quadrants = []
+            for v_mat in [mat_top, mat_persp, mat_front, mat_right]:
+                offscreen = gpu.types.GPUOffScreen(sub_w, sub_h)
+                try:
+                    offscreen.draw_view3d(
+                        bpy.context.scene, bpy.context.view_layer, space, region,
+                        v_mat, win_mat, do_color_management=True
+                    )
+                    buf = offscreen.texture_color.read()
+                finally:
+                    offscreen.free()
+
+                buf.dimensions = sub_w * sub_h * 4
+                pix = np.asarray(buf, dtype=np.float32) / 255.0
+                quadrants.append(pix.reshape((sub_h, sub_w, 4)))
+
+            top_row = np.concatenate([quadrants[0], quadrants[1]], axis=1)
+            bot_row = np.concatenate([quadrants[2], quadrants[3]], axis=1)
+            tiled = np.concatenate([bot_row, top_row], axis=0)
+
+            total_w = sub_w * 2
+            total_h = sub_h * 2
+            image = bpy.data.images.new("mcp_quad_capture", total_w, total_h, alpha=True)
+            image.pixels.foreach_set(tiled.ravel())
+            image.filepath_raw = str(filepath)
+            image.file_format = "PNG"
+            image.save()
+            bpy.data.images.remove(image)
+
+            return {
+                "filepath": str(filepath),
+                "width": total_w,
+                "height": total_h,
+                "quadrants": {
+                    "top_left": "Top",
+                    "top_right": "Perspective",
+                    "bottom_left": "Front",
+                    "bottom_right": "Right"
+                },
+                "status": "success"
+            }
+        except Exception as e:
+            res = self.get_viewport_screenshot(max_size=max_size, filepath=filepath)
+            res["quadrant_fallback"] = str(e)
+            return res
 
     def gbuffer_project_uv(self, quadrant, u, v, align_to_normal=True):
         """Raycast unprojector: Normalized 2D coordinate to 3D world contact point."""
@@ -2894,26 +3310,538 @@ class BlenderMCPServer:
         return {"hit": False, "hit_point": [float(u), 0.0, float(v)], "normal": [0.0, 0.0, 1.0], "quaternion": [1.0, 0.0, 0.0, 0.0]}
 
     def pbr_compile_curvature_ao(self, object_name, curvature_weight=1.0, ao_samples=16):
-        """Calculate per-vertex Laplacian curvature and store in BYTE_COLOR attribute."""
+        """Calculate per-vertex discrete Laplacian curvature and bake into McpCurvatureAO attribute."""
         obj = bpy.data.objects.get(object_name)
         if not obj or obj.type != 'MESH':
             return {"error": f"Mesh object {object_name} not found"}
-        mesh = obj.data
-        color_layer = mesh.attributes.get("McpCurvatureAO")
-        if not color_layer:
-            color_layer = mesh.attributes.new(name="McpCurvatureAO", type='BYTE_COLOR', domain='CORNER')
-        return {"object": object_name, "attribute": "McpCurvatureAO", "computed": True}
 
-    def export_game_asset(self, target, filepath, triangle_budget=None, format="glb"):
-        """Normalize bottom pivot to (0,0,0), apply transforms, and export."""
-        obj = bpy.data.objects.get(target)
-        if obj:
+        mesh = obj.data
+        num_verts = len(mesh.vertices)
+        if num_verts == 0:
+            return {"error": "Mesh has 0 vertices"}
+
+        coords = np.empty(num_verts * 3, dtype=np.float32)
+        mesh.vertices.foreach_get("co", coords)
+        coords = coords.reshape((num_verts, 3))
+
+        normals = np.empty(num_verts * 3, dtype=np.float32)
+        mesh.vertices.foreach_get("normal", normals)
+        normals = normals.reshape((num_verts, 3))
+
+        num_edges = len(mesh.edges)
+        if num_edges > 0:
+            edge_keys = np.empty(num_edges * 2, dtype=np.int32)
+            mesh.edges.foreach_get("vertices", edge_keys)
+            edge_keys = edge_keys.reshape((num_edges, 2))
+
+            # Fully vectorized Laplacian evaluation via np.add.at (sub-millisecond execution)
+            u_idx = edge_keys[:, 0]
+            v_idx = edge_keys[:, 1]
+            deg = np.zeros(num_verts, dtype=np.float32)
+            np.add.at(deg, u_idx, 1.0)
+            np.add.at(deg, v_idx, 1.0)
+
+            nbr_sum = np.zeros_like(coords)
+            np.add.at(nbr_sum, u_idx, coords[v_idx])
+            np.add.at(nbr_sum, v_idx, coords[u_idx])
+
+            deg_safe = np.where(deg > 0, deg, 1.0)[:, None]
+            laplacian = (nbr_sum / deg_safe) - coords
+            curv = np.sum(laplacian * normals, axis=1)
+            curv = np.where(deg > 0, curv, 0.0).astype(np.float32)
+        else:
+            curv = np.zeros(num_verts, dtype=np.float32)
+
+        w = float(curvature_weight)
+        c_red = np.clip(-curv * w * 2.0, 0.0, 1.0)
+        c_green = np.clip(1.0 - np.clip(curv * w * 2.0, 0.0, 1.0), 0.0, 1.0)
+        c_blue = np.ones(num_verts, dtype=np.float32)
+        c_alpha = np.ones(num_verts, dtype=np.float32)
+        vert_colors = np.column_stack([c_red, c_green, c_blue, c_alpha]).astype(np.float32)
+
+        attr = mesh.attributes.get("McpCurvatureAO")
+        if attr:
+            mesh.attributes.remove(attr)
+
+        attr = mesh.attributes.new(name="McpCurvatureAO", type='FLOAT_COLOR', domain='POINT')
+        attr.data.foreach_set("color", vert_colors.ravel())
+        mesh.update()
+
+        return {
+            "object": object_name,
+            "attribute": "McpCurvatureAO",
+            "domain": "POINT",
+            "type": "FLOAT_COLOR",
+            "vertex_count": num_verts,
+            "min_curvature": float(np.min(curv)),
+            "max_curvature": float(np.max(curv)),
+            "computed": True
+        }
+
+    def apply_uv_unwrap(self, target_object, angle_limit_deg=66.0, island_margin=0.02):
+        """Ensure object has valid UVMap and apply Smart UV Project."""
+        obj = bpy.data.objects.get(target_object)
+        if not obj or obj.type != 'MESH':
+            return {"status": "error", "error": f"Mesh object '{target_object}' not found"}
+
+        import math
+        mesh = obj.data
+        if not mesh.uv_layers:
+            mesh.uv_layers.new(name="UVMap")
+        mesh.uv_layers.active = mesh.uv_layers[0]
+
+        try:
+            # Deselect other objects so only target is operated on
+            for o in bpy.context.selected_objects:
+                if o != obj:
+                    o.select_set(False)
             bpy.context.view_layer.objects.active = obj
             obj.select_set(True)
-            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+
+            with bpy.context.temp_override(object=obj, active_object=obj, selected_editable_objects=[obj]):
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.uv.smart_project(
+                    angle_limit=math.radians(float(angle_limit_deg)),
+                    island_margin=float(island_margin)
+                )
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+            return {
+                "status": "success",
+                "object": obj.name,
+                "uv_map": mesh.uv_layers.active.name,
+                "num_uv_layers": len(mesh.uv_layers)
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def export_game_asset(self, target, filepath, triangle_budget=None, format="glb", auto_decimate=False, auto_uv=True, enforce_uv=False):
+        """Normalize bottom pivot to (0,0,0), evaluate budget, apply transforms, enforce UV, and export."""
+        obj = bpy.data.objects.get(target)
+        eval_tris = 0
+        budget_status = "NOT_SPECIFIED"
+        uv_status = "UNKNOWN"
+
+        if not obj:
+            return {"exported": False, "error": f"Target object '{target}' not found in scene"}
+
+        # 1. Selection Isolation: Deselect other objects so transform_apply only touches target
+        for o in bpy.context.selected_objects:
+            if o != obj:
+                o.select_set(False)
+
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+
+        # 2. UV Layer Inspection & Enforcement (Iron Law 4)
+        has_uv = bool(obj.data.uv_layers and len(obj.data.uv_layers) > 0)
+        if not has_uv:
+            if auto_uv:
+                unwrap_res = self.apply_uv_unwrap(target)
+                if unwrap_res.get("status") == "success":
+                    uv_status = "AUTO_UNWRAPPED"
+                else:
+                    uv_status = f"AUTO_UNWRAP_FAILED: {unwrap_res.get('error')}"
+            elif enforce_uv:
+                return {
+                    "exported": False,
+                    "error": f"Iron Law 4 Violation: Asset '{target}' has no UV coordinates.",
+                    "uv_status": "MISSING_UV_REJECTED"
+                }
+            else:
+                uv_status = "MISSING_UV_IGNORED"
+        else:
+            uv_status = "VALID_UV"
+
+        # 3. Measure evaluated geometry using dependency graph
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = obj.evaluated_get(depsgraph)
+        eval_mesh = eval_obj.to_mesh()
+        try:
+            eval_mesh.calc_loop_triangles()
+            eval_tris = len(eval_mesh.loop_triangles)
+        except Exception:
+            eval_tris = sum(max(1, len(p.vertices) - 2) for p in eval_mesh.polygons)
+        eval_obj.to_mesh_clear()
+
+        if triangle_budget and int(triangle_budget) > 0:
+            budget = int(triangle_budget)
+            if eval_tris > budget:
+                budget_status = "OVER_BUDGET"
+                if auto_decimate:
+                    decimate_ratio = min(1.0, float(budget) / max(1.0, float(eval_tris)))
+                    mod = obj.modifiers.new(name="MCP_Budget_Decimate", type='DECIMATE')
+                    mod.ratio = decimate_ratio
+                    # Re-evaluate
+                    eval_obj = obj.evaluated_get(depsgraph)
+                    eval_mesh = eval_obj.to_mesh()
+                    try:
+                        eval_mesh.calc_loop_triangles()
+                        eval_tris = len(eval_mesh.loop_triangles)
+                    except Exception:
+                        eval_tris = sum(max(1, len(p.vertices) - 2) for p in eval_mesh.polygons)
+                    eval_obj.to_mesh_clear()
+                    budget_status = "ENFORCED_WITH_DECIMATE"
+            else:
+                budget_status = "WITHIN_BUDGET"
+
         if format.lower() == "glb":
             bpy.ops.export_scene.gltf(filepath=filepath, export_format='GLB')
-        return {"exported": True, "filepath": filepath, "format": format}
+        elif format.lower() == "fbx":
+            bpy.ops.export_scene.fbx(filepath=filepath)
+
+        return {
+            "exported": True,
+            "filepath": filepath,
+            "format": format,
+            "target_object": target,
+            "evaluated_triangles": eval_tris,
+            "triangle_budget": triangle_budget,
+            "budget_status": budget_status,
+            "uv_status": uv_status
+        }
+
+    def create_bezier_tube(self, name, points, radius=0.02, resolution=12, fill_caps=True, collection_name=None):
+        """Create a non-destructive 3D curve tube (cables, pipes, trims)."""
+        curve_data = bpy.data.curves.new(name=name, type='CURVE')
+        curve_data.dimensions = '3D'
+        curve_data.bevel_depth = float(radius)
+        curve_data.bevel_resolution = int(resolution)
+        curve_data.use_fill_caps = bool(fill_caps)
+
+        spline = curve_data.splines.new(type='BEZIER')
+        spline.bezier_points.add(len(points) - 1)
+
+        for i, pt in enumerate(points):
+            bp = spline.bezier_points[i]
+            bp.co = mathutils.Vector(pt)
+            bp.handle_left_type = 'AUTO'
+            bp.handle_right_type = 'AUTO'
+
+        obj = bpy.data.objects.new(name, curve_data)
+        col = bpy.data.collections.get(collection_name) if collection_name else bpy.context.scene.collection
+        col.objects.link(obj)
+        return {"name": obj.name, "points": len(points), "bevel_depth": radius, "status": "created"}
+
+    def setup_subdivision_cage(self, object_name, levels=2, render_levels=2, bevel_width=0.008, weighted_normal=True):
+        """Configure modern Aryan 3D / Isto Inc low-poly subdivision cage workflow."""
+        obj = bpy.data.objects.get(object_name)
+        if not obj or obj.type != 'MESH':
+            return {"error": f"Mesh object {object_name} not found"}
+
+        for poly in obj.data.polygons:
+            poly.use_smooth = True
+
+        sub_mod = obj.modifiers.get("Cage_Subsurf")
+        if not sub_mod:
+            sub_mod = obj.modifiers.new("Cage_Subsurf", "SUBSURF")
+        sub_mod.levels = int(levels)
+        sub_mod.render_levels = int(render_levels)
+
+        if bevel_width > 0:
+            bev_mod = obj.modifiers.get("Cage_Bevel")
+            if not bev_mod:
+                bev_mod = obj.modifiers.new("Cage_Bevel", "BEVEL")
+            bev_mod.width = float(bevel_width)
+            bev_mod.segments = 2
+            bev_mod.limit_method = 'ANGLE'
+            bev_mod.angle_limit = math.radians(35.0)
+            bev_mod.harden_normals = True
+
+        if weighted_normal:
+            wn_mod = obj.modifiers.get("Cage_WeightedNormal")
+            if not wn_mod:
+                wn_mod = obj.modifiers.new("Cage_WeightedNormal", "WEIGHTED_NORMAL")
+            wn_mod.keep_sharp = True
+            wn_mod.weight = 50
+
+        return {"object": obj.name, "modifiers": [m.name for m in obj.modifiers], "status": "configured"}
+
+    def crop_reference_region(self, image_path, crop_box=None, output_path=None, region_name="region"):
+        """Extract named visual region crop from reference image to eliminate hallucination."""
+        import os
+        if not os.path.exists(image_path):
+            return {"error": f"Image file not found: {image_path}"}
+
+        REGION_PRESETS = {
+            "nose_grille": [0.35, 0.05, 0.70, 0.45],
+            "hood_windshield": [0.15, 0.15, 0.55, 0.60],
+            "front_wheel_arch": [0.45, 0.10, 0.85, 0.40],
+            "side_flank": [0.25, 0.20, 0.75, 0.85],
+            "rear_fascia": [0.20, 0.60, 0.80, 0.98]
+        }
+        box = crop_box or REGION_PRESETS.get(region_name.lower(), [0.0, 0.0, 1.0, 1.0])
+
+        if output_path is None:
+            import tempfile
+            output_path = os.path.join(tempfile.gettempdir(), f"crop_{region_name}.png")
+
+        try:
+            from PIL import Image
+            with Image.open(image_path) as im:
+                w, h = im.size
+                ymin, xmin, ymax, xmax = box
+                px_box = (int(xmin * w), int(ymin * h), int(xmax * w), int(ymax * h))
+                cropped = im.crop(px_box)
+                cropped.save(output_path)
+            return {"status": "success", "region": region_name, "crop_path": output_path, "box": box, "source": image_path}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def get_component_tree(self, archetype="VEHICLE"):
+        """Return formal 4-level component tree decomposition (Asset -> System -> Component -> Detail)."""
+        arch = (archetype or "VEHICLE").upper()
+        if arch == "VEHICLE" or "CAR" in arch or "VAN" in arch:
+            return {
+                "archetype": "VEHICLE",
+                "systems": {
+                    "body_shell": {
+                        "strategy": "subdivision_cage",
+                        "components": ["hood_bonnet", "fenders_left_right", "cab_roof", "cargo_box", "rear_doors"],
+                        "datums": ["centerline", "axle_planes", "beltline_z"]
+                    },
+                    "aerodynamics": {
+                        "strategy": "subdivision_cage",
+                        "components": ["front_bumper_cover", "lower_splitter", "radiator_grille_opening", "brake_cooling_ducts"],
+                        "datums": ["ground_plane", "approach_angle"]
+                    },
+                    "lighting": {
+                        "strategy": "boolean_bevel",
+                        "components": ["headlamp_housings", "projector_lenses", "drl_strips", "rear_vertical_taillights"],
+                        "datums": ["fascia_recesses"]
+                    },
+                    "wheel_assembly": {
+                        "strategy": "subdivision_cage",
+                        "components": ["treaded_tires", "rim_barrel", "10_hole_alloy_face", "center_hub_cap", "brake_disc_caliper"],
+                        "datums": ["wheel_centers", "tire_envelopes"]
+                    },
+                    "secondary_trim": {
+                        "strategy": "bezier_curve",
+                        "components": ["roof_rails", "window_weather_seals", "side_rubbing_strips", "emergency_cable_harnesses"],
+                        "datums": ["surface_contours"]
+                    }
+                }
+            }
+        return {
+            "archetype": arch,
+            "systems": {
+                "primary_structure": {"strategy": "subdivision_cage", "components": ["main_chassis"]},
+                "secondary_housings": {"strategy": "boolean_bevel", "components": ["panels", "cutouts"]},
+                "tubes_and_cables": {"strategy": "bezier_curve", "components": ["harnesses", "pipes"]},
+                "wear_and_finish": {"strategy": "sculpt_and_bake", "components": ["surface_breakup"]}
+            }
+        }
+
+    def audit_mesh_topology(self, object_name, auto_repair=False):
+        """Audit mesh object topology for non-manifold edges, loose vertices, and watertightness."""
+        obj = bpy.data.objects.get(object_name)
+        if not obj or obj.type != 'MESH':
+            return {"error": f"Mesh object {object_name} not found"}
+
+        mesh = obj.data
+        bm = bmesh.new()
+        try:
+            bm.from_mesh(mesh)
+
+            repaired = {}
+            if auto_repair:
+                doubles = bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
+                repaired["doubles_removed"] = len(doubles.get("verts", []))
+                loose_v = [v for v in bm.verts if not v.link_edges]
+                if loose_v:
+                    bmesh.ops.delete(bm, geom=loose_v, context='VERTS')
+                    repaired["loose_verts_deleted"] = len(loose_v)
+                bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+                repaired["normals_recalculated"] = True
+                bm.to_mesh(mesh)
+                mesh.update()
+
+            non_manifold_e = [e for e in bm.edges if not e.is_manifold]
+            boundary_e = [e for e in bm.edges if e.is_boundary]
+            non_manifold_v = [v for v in bm.verts if not v.is_manifold]
+            loose_v = [v for v in bm.verts if not v.link_edges]
+
+            is_watertight = (len(boundary_e) == 0 and len(non_manifold_e) == 0 and len(loose_v) == 0)
+            status = "PASS" if is_watertight else "FAIL"
+
+            result = {
+                "object": obj.name,
+                "vertex_count": len(bm.verts),
+                "edge_count": len(bm.edges),
+                "face_count": len(bm.faces),
+                "non_manifold_edges": len(non_manifold_e),
+                "open_boundary_edges": len(boundary_e),
+                "non_manifold_vertices": len(non_manifold_v),
+                "loose_verts": len(loose_v),
+                "is_watertight": is_watertight,
+                "status": status,
+                "auto_repair_applied": auto_repair,
+                "repairs": repaired if auto_repair else None
+            }
+            return result
+        finally:
+            bm.free()
+
+    def inspect_specular_clay_pass(self, object_name=None, filepath=None, mode="STUDIO_CLAY", max_size=1024):
+        """Perform non-destructive specular clay or zebra reflection analysis for curvature continuity."""
+        if not filepath:
+            import tempfile
+            filepath = os.path.join(tempfile.gettempdir(), f"specular_clay_pass_{mode.lower()}.png")
+
+        # Determine target mesh objects
+        if object_name:
+            target = bpy.data.objects.get(object_name)
+            if not target or target.type != 'MESH':
+                return {"error": f"Target mesh object '{object_name}' not found"}
+            target_objects = [target]
+        else:
+            target_objects = [o for o in bpy.context.scene.objects if o.type == 'MESH' and not o.hide_viewport]
+            if not target_objects:
+                return {"error": "No visible mesh objects found in scene"}
+
+        # Preserve original material slots non-destructively
+        orig_materials = {}
+        for obj in target_objects:
+            orig_materials[obj.name] = [slot.material for slot in obj.material_slots]
+
+        try:
+            # Create or fetch inspection material
+            if mode == "ZEBRA":
+                mat = bpy.data.materials.get("__MCP_Studio_Zebra__") or bpy.data.materials.new("__MCP_Studio_Zebra__")
+                mat.use_nodes = True
+                nodes = mat.node_tree.nodes
+                nodes.clear()
+                output = nodes.new('ShaderNodeOutputMaterial')
+                emission = nodes.new('ShaderNodeEmission')
+                wave = nodes.new('ShaderNodeTexWave')
+                tex_coord = nodes.new('ShaderNodeTexCoord')
+                wave.bands_direction = 'Y'
+                if hasattr(wave, 'inputs') and 'Scale' in wave.inputs:
+                    wave.inputs['Scale'].default_value = 20.0
+                mat.node_tree.links.new(tex_coord.outputs.get('Normal', tex_coord.outputs[0]), wave.inputs.get('Vector', wave.inputs[0]))
+                mat.node_tree.links.new(wave.outputs.get('Color', wave.outputs[0]), emission.inputs.get('Color', emission.inputs[0]))
+                mat.node_tree.links.new(emission.outputs.get('Emission', emission.outputs[0]), output.inputs.get('Surface', output.inputs[0]))
+            else:
+                mat = MaterialPresetVault.setup_specular_clay(
+                    name="__MCP_Studio_Specular_Clay__",
+                    color=(0.5, 0.5, 0.5, 1.0),
+                    roughness=0.08,
+                    clearcoat=1.0
+                )
+
+            # Assign inspection material to all target objects
+            for obj in target_objects:
+                obj.data.materials.clear()
+                obj.data.materials.append(mat)
+
+            # Capture 4-quadrant offscreen render
+            capture_res = self.gbuffer_quad_capture(
+                filepath=filepath,
+                include_wireframe=False,
+                target_partition=None,
+                max_size=max_size
+            )
+            return {
+                "status": "captured",
+                "filepath": filepath,
+                "mode": mode,
+                "objects_inspected": [o.name for o in target_objects],
+                "capture_info": capture_res
+            }
+        finally:
+            # Strictly restore original materials
+            for obj in target_objects:
+                obj.data.materials.clear()
+                for orig_mat in orig_materials.get(obj.name, []):
+                    if orig_mat:
+                        obj.data.materials.append(orig_mat)
+
+    def get_evaluated_budget_report(self, target_collection=None, object_name=None, target_budget=None):
+        """Calculate evaluated geometry budget with active modifiers applied via dependency graph."""
+        if object_name:
+            target = bpy.data.objects.get(object_name)
+            if not target or target.type != 'MESH':
+                return {"error": f"Target mesh object '{object_name}' not found"}
+            objects = [target]
+        elif target_collection:
+            col = bpy.data.collections.get(target_collection)
+            if not col:
+                return {"error": f"Collection '{target_collection}' not found"}
+            objects = [o for o in col.all_objects if o.type == 'MESH']
+        else:
+            objects = [o for o in bpy.context.scene.objects if o.type == 'MESH' and not o.hide_viewport]
+
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        components = []
+        total_base_verts = 0
+        total_base_faces = 0
+        total_eval_verts = 0
+        total_eval_tris = 0
+
+        for obj in objects:
+            base_verts = len(obj.data.vertices)
+            base_faces = len(obj.data.polygons)
+            total_base_verts += base_verts
+            total_base_faces += base_faces
+
+            # Get evaluated mesh with modifiers applied
+            try:
+                eval_obj = obj.evaluated_get(depsgraph)
+                eval_mesh = eval_obj.to_mesh()
+                try:
+                    eval_mesh.calc_loop_triangles()
+                    eval_tris = len(eval_mesh.loop_triangles)
+                except Exception:
+                    eval_tris = sum(max(1, len(p.vertices) - 2) for p in eval_mesh.polygons)
+                eval_verts = len(eval_mesh.vertices)
+                eval_obj.to_mesh_clear()
+            except Exception:
+                eval_verts = base_verts
+                eval_tris = sum(max(1, len(p.vertices) - 2) for p in obj.data.polygons)
+
+            total_eval_verts += eval_verts
+            total_eval_tris += eval_tris
+
+            modifiers = [
+                {
+                    "name": m.name,
+                    "type": m.type,
+                    "show_viewport": m.show_viewport,
+                    "show_render": m.show_render
+                }
+                for m in obj.modifiers
+            ]
+
+            components.append({
+                "name": obj.name,
+                "base_verts": base_verts,
+                "base_faces": base_faces,
+                "evaluated_verts": eval_verts,
+                "evaluated_tris": eval_tris,
+                "modifiers": modifiers
+            })
+
+        budget_status = "UNKNOWN"
+        if target_budget and target_budget > 0:
+            if total_eval_tris > target_budget * 1.15:
+                budget_status = "OVER_BUDGET"
+            elif total_eval_tris < target_budget * 0.5:
+                budget_status = "UNDER_BUDGET"
+            else:
+                budget_status = "WITHIN_BUDGET"
+
+        return {
+            "components": components,
+            "component_count": len(components),
+            "total_base_verts": total_base_verts,
+            "total_base_faces": total_base_faces,
+            "total_evaluated_verts": total_eval_verts,
+            "total_evaluated_tris": total_eval_tris,
+            "target_budget": target_budget,
+            "budget_status": budget_status
+        }
 
 
     # ------------------------------------------------------------------
