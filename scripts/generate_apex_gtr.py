@@ -1007,3 +1007,110 @@ def build_hood(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 7. Component Assembly Generators: Side Skirts (Phase 3)
+# ==============================================================================
+
+def generate_side_skirts_mesh_data(
+    ny_sk: int = 32,
+    n_prof: int = 16
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Side_Skirts."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    for side in (-1, 1):
+        sk_base = len(all_verts)
+        for i in range(ny_sk + 1):
+            yf = i / ny_sk
+            y = 0.950 * (1 - yf) + (-0.950) * yf
+
+            # Winglet flick ahead of rear wheel arch
+            if y <= -0.700:
+                flick_factor = math.sin((y - (-0.700)) / (-0.250) * (math.pi / 2.0))
+                z_flick = 0.100 * (flick_factor ** 2)
+            else:
+                z_flick = 0.0
+
+            x_inner = side * 0.840
+            x_outer = side * (0.940 + (0.015 if z_flick > 0 else 0.0))
+            z_inner = 0.120
+            z_outer_bot = 0.060
+            z_outer_top = 0.080 + z_flick
+
+            for j in range(n_prof + 1):
+                pf = j / n_prof
+                if pf <= 0.333:
+                    u = pf / 0.333
+                    x = x_inner * (1 - u) + x_outer * u
+                    z = z_inner * (1 - u) + z_outer_top * u
+                elif pf <= 0.666:
+                    u = (pf - 0.333) / 0.333
+                    x = x_outer
+                    z = z_outer_top * (1 - u) + z_outer_bot * u
+                else:
+                    u = (pf - 0.666) / 0.334
+                    x = x_outer * (1 - u) + x_inner * u
+                    z = z_outer_bot * (1 - u) + 0.100 * u
+                all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+        for i in range(ny_sk):
+            for j in range(n_prof):
+                v0 = sk_base + i * (n_prof + 1) + j
+                v1 = v0 + 1
+                v2 = sk_base + (i + 1) * (n_prof + 1) + (j + 1)
+                v3 = sk_base + (i + 1) * (n_prof + 1) + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+    return all_verts, all_faces
+
+
+def build_side_skirts(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Side_Skirts inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_side_skirts_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Side_Skirts_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Side_Skirts", mesh)
+
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+    if "MAT_GTR_Crimson_Accent" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Crimson_Accent"])
+
+    bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+    bev.width = 0.005
+    bev.segments = 2
+    bev.profile = 0.5
+    bev.harden_normals = True
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    col = collections.get("02_Aero_Fascia", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
