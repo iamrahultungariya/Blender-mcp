@@ -412,3 +412,149 @@ def build_body_shell(materials: Dict[str, Any], collections: Dict[str, Any]) -> 
     col.objects.link(obj)
 
     return obj
+
+
+def generate_fenders_mesh_data(
+    n_theta: int = 32,
+    n_radial: int = 10
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for flared widebody fenders."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    configs = [
+        # (yc, r_in, r_out, x_body, x_flare, side, is_front)
+        (1.350, 0.380, 0.470, 0.900, 0.985, -1, True),   # Front Left
+        (1.350, 0.380, 0.470, 0.900, 0.985, 1, True),    # Front Right
+        (-1.350, 0.390, 0.480, 0.910, 0.995, -1, False), # Rear Left
+        (-1.350, 0.390, 0.480, 0.910, 0.995, 1, False),  # Rear Right
+    ]
+
+    for yc, r_in, r_out, x_body, x_flare, side, is_front in configs:
+        base_idx = len(all_verts)
+        # Angular span extending down to rocker sill (Z=0.14)
+        extra_th = math.asin(min(0.99, (0.340 - 0.140) / r_in))
+        th_min = -extra_th
+        th_max = math.pi + extra_th
+
+        # 1. Blister arch surface
+        for i in range(n_theta + 1):
+            t_angle = i / n_theta
+            th = th_min * (1 - t_angle) + th_max * t_angle
+            sin_th = math.sin(th)
+            cos_th = math.cos(th)
+
+            for j in range(n_radial + 1):
+                rf = j / n_radial
+                r = r_in * (1 - rf) + r_out * rf
+                y_r = yc - cos_th * r
+                z_r = max(0.100, 0.340 + sin_th * r)
+                # Parabolic blister flare profile
+                flare_shape = 1.0 - (rf ** 1.7)
+                x = side * (x_body + (x_flare - x_body) * flare_shape)
+                all_verts.append([round(float(x), 4), round(float(y_r), 4), round(float(z_r), 4)])
+
+        for i in range(n_theta):
+            for j in range(n_radial):
+                v0 = base_idx + i * (n_radial + 1) + j
+                v1 = v0 + 1
+                v2 = base_idx + (i + 1) * (n_radial + 1) + (j + 1)
+                v3 = base_idx + (i + 1) * (n_radial + 1) + j
+                if side < 0:
+                    all_faces.append([v0, v1, v2, v3])
+                else:
+                    all_faces.append([v0, v3, v2, v1])
+
+        # 2. Inward wheel arch return lip flange (15mm return inside wheel well)
+        lip_base = len(all_verts)
+        n_lip = 3
+        for i in range(n_theta + 1):
+            t_angle = i / n_theta
+            th = th_min * (1 - t_angle) + th_max * t_angle
+            sin_th = math.sin(th)
+            cos_th = math.cos(th)
+            y_r = yc - cos_th * r_in
+            z_r = 0.340 + sin_th * r_in
+            for k in range(n_lip + 1):
+                kf = k / n_lip
+                x = side * (x_flare - 0.035 * kf)
+                all_verts.append([round(float(x), 4), round(float(y_r), 4), round(float(z_r), 4)])
+
+        for i in range(n_theta):
+            for k in range(n_lip):
+                v0 = lip_base + i * (n_lip + 1) + k
+                v1 = v0 + 1
+                v2 = lip_base + (i + 1) * (n_lip + 1) + (k + 1)
+                v3 = lip_base + (i + 1) * (n_lip + 1) + k
+                if side < 0:
+                    all_faces.append([v0, v3, v2, v1])
+                else:
+                    all_faces.append([v0, v1, v2, v3])
+
+        # 3. Aero air relief louvers (only on front fenders, behind wheel arch)
+        if is_front:
+            louver_base = len(all_verts)
+            n_louver_v = 4
+            for lv in range(n_louver_v):
+                y_lv = 0.980 + lv * 0.060
+                z_lv = 0.380 + lv * 0.080
+                # 4 vertices per louver slat
+                x0 = side * 0.920
+                x1 = side * 0.965
+                all_verts.append([round(float(x0), 4), round(float(y_lv), 4), round(float(z_lv), 4)])
+                all_verts.append([round(float(x1), 4), round(float(y_lv), 4), round(float(z_lv + 0.025), 4)])
+                all_verts.append([round(float(x1), 4), round(float(y_lv + 0.040), 4), round(float(z_lv + 0.025), 4)])
+                all_verts.append([round(float(x0), 4), round(float(y_lv + 0.040), 4), round(float(z_lv), 4)])
+                lv_idx = louver_base + lv * 4
+                if side < 0:
+                    all_faces.append([lv_idx, lv_idx + 1, lv_idx + 2, lv_idx + 3])
+                else:
+                    all_faces.append([lv_idx, lv_idx + 3, lv_idx + 2, lv_idx + 1])
+
+    return all_verts, all_faces
+
+
+def build_widebody_fenders(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Fenders_Widebody inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_fenders_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Fenders_Widebody_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Fenders_Widebody", mesh)
+
+    if "MAT_GTR_Paint_Gunmetal" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Paint_Gunmetal"])
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+
+    bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+    bev.width = 0.005
+    bev.segments = 2
+    bev.profile = 0.5
+    bev.harden_normals = True
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    col = collections.get("01_Body_Structure", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
