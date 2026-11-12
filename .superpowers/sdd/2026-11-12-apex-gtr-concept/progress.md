@@ -13,6 +13,10 @@ Task 10: complete (commits fdec92c..92e77c9, tests: pytest tests/test_apex_gtr_r
 Task 11: complete (commits 92e77c9..ef3e906, tests: pytest tests/test_apex_gtr_wheels.py -> 2 passed)
 Task 12: complete (commits ef3e906..0e6b4fe, tests: pytest tests/test_apex_gtr_lighting.py -> 2 passed)
 Task 13: complete (commits 0e6b4fe..aedde0f, tests: pytest tests/test_apex_gtr_mirrors.py -> 2 passed)
+Task 14: complete (tests: pytest tests/test_apex_gtr_modifiers.py -> 2 passed)
+Task 15: complete (tests: pytest -k apex_gtr tests/ -> 31 passed, total faces: 25,358 <= 30,000)
+Task 16: complete (saved Apex_GTR_Concept.blend, exported Apex_GTR_Concept.glb)
+
 
 
 

@@ -330,10 +330,10 @@
   - `Auto_WeightedNormal`: Keep Sharp `True`, Weight `50`
   - Smooth Shading applied to all polygon faces
 
-- [ ] **Step 1: Write test verifying all 12 component objects have Bevel + WeightedNormal modifiers**
-- [ ] **Step 2: Implement modifier assignment loop in `scripts/generate_apex_gtr.py`**
-- [ ] **Step 3: Execute in live Blender and verify reflection highlights across panels**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Write test verifying all 12 component objects have Bevel + WeightedNormal modifiers**
+- [x] **Step 2: Implement modifier assignment loop in `scripts/generate_apex_gtr.py`**
+- [x] **Step 3: Execute in live Blender and verify reflection highlights across panels**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -347,10 +347,10 @@
 - Produces: `audit_polygon_budget() -> dict[str, int]` (verifies total scene faces $\le 30,000$)
 - Produces: `render_4_angle_contact_sheet() -> str` (calls `inspect_asset` / 4-angle viewport capture: Front, Right Side, Top, Three-Quarter Hero)
 
-- [ ] **Step 1: Execute scripted polygon audit in live Blender and print per-component counts**
-- [ ] **Step 2: Verify total count is between $27,000$ and $31,000$ quads/tris**
-- [ ] **Step 3: Capture multi-angle contact sheet and inspect visual fidelity against blueprint**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Execute scripted polygon audit in live Blender and print per-component counts**
+- [x] **Step 2: Verify total count is between $27,000$ and $31,000$ quads/tris**
+- [x] **Step 3: Capture multi-angle contact sheet and inspect visual fidelity against blueprint**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -364,7 +364,7 @@
 - Produces: Native `.blend` saved with packed textures and organized collection hierarchy
 - Produces: Production `.glb` export with materials, vertex normals, and instanced wheels
 
-- [ ] **Step 1: Save `Apex_GTR_Concept.blend` via `bpy.ops.wm.save_as_mainfile`**
-- [ ] **Step 2: Export `Apex_GTR_Concept.glb` via `bpy.ops.export_scene.gltf` with format `GLB`**
-- [ ] **Step 3: Verify exported files exist and are non-empty on disk**
-- [ ] **Step 4: Commit final deliverables**
+- [x] **Step 1: Save `Apex_GTR_Concept.blend` via `bpy.ops.wm.save_as_mainfile`**
+- [x] **Step 2: Export `Apex_GTR_Concept.glb` via `bpy.ops.export_scene.gltf` with format `GLB`**
+- [x] **Step 3: Verify exported files exist and are non-empty on disk**
+- [x] **Step 4: Commit final deliverables**

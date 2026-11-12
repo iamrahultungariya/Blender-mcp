@@ -2129,3 +2129,129 @@ def build_aero_mirrors(materials: Dict[str, Any], collections: Dict[str, Any]) -
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 13. Finishing, Assembly & Export Pipeline (Phase 5)
+# ==============================================================================
+
+MODIFIER_FINISHING_SPECS: Dict[str, Dict[str, Any]] = {
+    "bevel": {
+        "width": 0.005,
+        "segments": 2,
+        "profile": 0.50,
+        "harden_normals": True,
+    },
+    "weighted_normal": {
+        "keep_sharp": True,
+        "weight": 50,
+    },
+}
+
+
+def apply_automotive_finishing(objects: List[Any]) -> None:
+    """Apply Bevel and WeightedNormal modifiers and smooth shading across all objects."""
+    if not HAS_BPY:
+        return
+
+    for obj in objects:
+        if obj is None or obj.type != 'MESH':
+            continue
+
+        # Ensure smooth polygon shading
+        for poly in obj.data.polygons:
+            poly.use_smooth = True
+
+        # Avoid duplicate modifiers
+        existing_mods = {m.name: m for m in obj.modifiers}
+
+        # Apply Bevel (if not glass or wheels which have custom bevels/treads)
+        if "Glass" not in obj.name and "Wheel" not in obj.name:
+            if "Auto_Bevel" not in existing_mods:
+                bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+                bev.width = MODIFIER_FINISHING_SPECS["bevel"]["width"]
+                bev.segments = MODIFIER_FINISHING_SPECS["bevel"]["segments"]
+                bev.profile = MODIFIER_FINISHING_SPECS["bevel"]["profile"]
+                bev.harden_normals = MODIFIER_FINISHING_SPECS["bevel"]["harden_normals"]
+
+        # Apply WeightedNormal
+        if "Auto_WeightedNormal" not in existing_mods:
+            wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+            wn.keep_sharp = MODIFIER_FINISHING_SPECS["weighted_normal"]["keep_sharp"]
+
+
+def audit_polygon_budget() -> Dict[str, Any]:
+    """Calculate and return polycounts for all Apex GT-R Concept objects in Blender."""
+    if not HAS_BPY:
+        return {"total_unique_faces": 0, "total_scene_faces": 0, "components": {}}
+
+    unique_meshes = set()
+    component_counts = {}
+    total_scene_faces = 0
+
+    col_master = bpy.data.collections.get("Apex_GTR_Concept")
+    all_objs = col_master.all_objects if col_master else bpy.data.objects
+
+    for obj in all_objs:
+        if obj.type == 'MESH':
+            n_faces = len(obj.data.polygons)
+            component_counts[obj.name] = n_faces
+            total_scene_faces += n_faces
+            unique_meshes.add(obj.data)
+
+    total_unique_faces = sum(len(m.polygons) for m in unique_meshes)
+
+    return {
+        "total_unique_faces": total_unique_faces,
+        "total_scene_faces": total_scene_faces,
+        "within_30k_budget": total_scene_faces <= 30000,
+        "components": component_counts,
+    }
+
+
+def generate_full_apex_gtr() -> Dict[str, Any]:
+    """Execute complete generation of all 12 Apex GT-R Concept components."""
+    if not HAS_BPY:
+        return {}
+
+    cols = setup_scene_hierarchy()
+    mats = setup_gtr_materials()
+
+    created_objs = []
+    # 01 Body Structure
+    body = build_body_shell(mats, cols)
+    fenders = build_widebody_fenders(mats, cols)
+    hood = build_hood(mats, cols)
+    created_objs.extend([body, fenders, hood])
+
+    # 02 Aero Fascia
+    front = build_front_bumper_splitter(mats, cols)
+    skirts = build_side_skirts(mats, cols)
+    diffuser = build_rear_diffuser_exhaust(mats, cols)
+    wing = build_rear_wing(mats, cols)
+    created_objs.extend([front, skirts, diffuser, wing])
+
+    # 03 Glass & Mirrors
+    glass = build_glass_canopy(mats, cols)
+    mirrors = build_aero_mirrors(mats, cols)
+    created_objs.extend([glass, mirrors])
+
+    # 04 Lighting
+    headlights = build_headlights(mats, cols)
+    taillights = build_tail_lights(mats, cols)
+    created_objs.extend([headlights, taillights])
+
+    # 05 Wheels (4 instanced)
+    wheels = build_master_wheel(mats, cols)
+    created_objs.extend(wheels)
+
+    # Finishing
+    apply_automotive_finishing(created_objs)
+
+    # Polycount audit
+    audit = audit_polygon_budget()
+
+    return {
+        "objects": [obj.name for obj in created_objs if obj],
+        "audit": audit,
+    }
