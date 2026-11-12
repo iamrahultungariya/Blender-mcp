@@ -71,6 +71,75 @@ COLLECTION_HIERARCHY: Dict[str, List[str]] = {
 }
 
 
+# ==============================================================================
+# 2. PBR Automotive Material Vault Specifications
+# ==============================================================================
+
+GTR_MATERIAL_SPECS: Dict[str, Dict[str, Any]] = {
+    "MAT_GTR_Paint_Gunmetal": {
+        "base_color": (0.04, 0.04, 0.05, 1.0),
+        "metallic": 0.92,
+        "roughness": 0.22,
+        "clearcoat": 1.0,
+        "clearcoat_roughness": 0.03,
+    },
+    "MAT_GTR_Carbon_Satin": {
+        "base_color": (0.02, 0.02, 0.02, 1.0),
+        "metallic": 0.10,
+        "roughness": 0.35,
+        "clearcoat": 0.4,
+        "clearcoat_roughness": 0.1,
+    },
+    "MAT_GTR_Crimson_Accent": {
+        "base_color": (0.85, 0.02, 0.03, 1.0),
+        "metallic": 0.20,
+        "roughness": 0.25,
+        "clearcoat": 0.8,
+        "clearcoat_roughness": 0.05,
+    },
+    "MAT_GTR_Automotive_Glass": {
+        "base_color": (0.08, 0.10, 0.12, 1.0),
+        "metallic": 0.0,
+        "roughness": 0.02,
+        "transmission": 1.0,
+        "ior": 1.52,
+    },
+    "MAT_GTR_Tire_Rubber": {
+        "base_color": (0.03, 0.03, 0.03, 1.0),
+        "metallic": 0.0,
+        "roughness": 0.78,
+        "clearcoat": 0.0,
+    },
+    "MAT_GTR_Brake_Steel": {
+        "base_color": (0.75, 0.75, 0.75, 1.0),
+        "metallic": 0.95,
+        "roughness": 0.30,
+        "clearcoat": 0.0,
+    },
+    "MAT_GTR_Caliper_Red": {
+        "base_color": (0.90, 0.01, 0.01, 1.0),
+        "metallic": 0.10,
+        "roughness": 0.15,
+        "clearcoat": 1.0,
+        "clearcoat_roughness": 0.03,
+    },
+    "MAT_GTR_LED_Emissive": {
+        "base_color": (1.0, 1.0, 1.0, 1.0),
+        "emission_color": (1.0, 1.0, 1.0, 1.0),
+        "emission_strength": 15.0,
+        "metallic": 0.0,
+        "roughness": 0.1,
+    },
+    "MAT_GTR_Tail_Emissive": {
+        "base_color": (0.9, 0.02, 0.02, 1.0),
+        "emission_color": (1.0, 0.02, 0.02, 1.0),
+        "emission_strength": 12.0,
+        "metallic": 0.0,
+        "roughness": 0.1,
+    },
+}
+
+
 def calculate_bounding_dimensions(
     min_v: Tuple[float, float, float],
     max_v: Tuple[float, float, float]
@@ -112,3 +181,76 @@ def setup_scene_hierarchy() -> Dict[str, Any]:
         created_collections[sub_name] = sub_col
 
     return created_collections
+
+
+def _set_bsdf_socket(node: Any, socket_names: List[str], value: Any) -> bool:
+    """Set socket value dynamically checking for Blender 3.x/4.x/5.x socket names."""
+    if node is None or not hasattr(node, "inputs"):
+        return False
+    for name in socket_names:
+        sock = node.inputs.get(name)
+        if sock is not None:
+            try:
+                sock.default_value = value
+                return True
+            except Exception:
+                pass
+    return False
+
+
+def setup_gtr_materials() -> Dict[str, Any]:
+    """Build and return all 9 PBR materials for the Apex GT-R Concept."""
+    if not HAS_BPY:
+        return {}
+
+    built_materials: Dict[str, bpy.types.Material] = {}
+
+    for mat_name, spec in GTR_MATERIAL_SPECS.items():
+        mat = bpy.data.materials.get(mat_name)
+        if not mat:
+            mat = bpy.data.materials.new(mat_name)
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+
+        # Find Principled BSDF
+        bsdf = None
+        for n in nodes:
+            if n.type == 'BSDF_PRINCIPLED':
+                bsdf = n
+                break
+        if bsdf is None:
+            bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+
+        # Base Color
+        if "base_color" in spec:
+            _set_bsdf_socket(bsdf, ["Base Color"], spec["base_color"])
+
+        # Metallic
+        if "metallic" in spec:
+            _set_bsdf_socket(bsdf, ["Metallic"], spec["metallic"])
+
+        # Roughness
+        if "roughness" in spec:
+            _set_bsdf_socket(bsdf, ["Roughness"], spec["roughness"])
+
+        # Clearcoat / Coat Weight
+        if "clearcoat" in spec:
+            _set_bsdf_socket(bsdf, ["Coat Weight", "Coat", "Clearcoat"], spec["clearcoat"])
+        if "clearcoat_roughness" in spec:
+            _set_bsdf_socket(bsdf, ["Coat Roughness", "Clearcoat Roughness"], spec["clearcoat_roughness"])
+
+        # Transmission
+        if "transmission" in spec:
+            _set_bsdf_socket(bsdf, ["Transmission Weight", "Transmission"], spec["transmission"])
+        if "ior" in spec:
+            _set_bsdf_socket(bsdf, ["IOR"], spec["ior"])
+
+        # Emission
+        if "emission_color" in spec:
+            _set_bsdf_socket(bsdf, ["Emission Color", "Emission"], spec["emission_color"])
+        if "emission_strength" in spec:
+            _set_bsdf_socket(bsdf, ["Emission Strength"], spec["emission_strength"])
+
+        built_materials[mat_name] = mat
+
+    return built_materials
