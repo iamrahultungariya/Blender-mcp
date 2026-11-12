@@ -871,3 +871,139 @@ def build_front_bumper_splitter(materials: Dict[str, Any], collections: Dict[str
     col.objects.link(obj)
 
     return obj
+
+
+# ==============================================================================
+# 6. Component Assembly Generators: Hood (Phase 3)
+# ==============================================================================
+
+def generate_hood_mesh_data(
+    ny_h: int = 36,
+    nx_h: int = 36
+) -> Tuple[List[List[float]], List[List[int]]]:
+    """Generate vertex coordinates and quad faces for GTR_Hood."""
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    h_base = len(all_verts)
+    for i in range(ny_h + 1):
+        yf = i / ny_h
+        y = 0.880 * (1 - yf) + 2.150 * yf
+        z_base = 0.750 * (1 - yf) + 0.630 * yf
+        w = 0.700 * (1 - yf) + 0.580 * yf
+
+        for j in range(nx_h + 1):
+            xf = j / nx_h
+            x = -w * (1 - xf) + w * xf
+
+            # Crown camber across hood
+            camber = 0.020 * (1.0 - (x / w) ** 2)
+
+            # Dual power bulges at |x| around 0.28m
+            dist_bulge = abs(abs(x) - 0.280)
+            bulge = 0.012 * max(0.0, 1.0 - (dist_bulge / 0.120) ** 2) if y <= 1.80 else 0.0
+
+            # Recessed heat extractor vents between y=1.20 and y=1.65
+            if 1.20 <= y <= 1.65 and 0.16 <= abs(x) <= 0.40:
+                y_vent_f = math.sin((y - 1.20) / 0.45 * math.pi)
+                x_vent_f = math.sin((abs(x) - 0.16) / 0.24 * math.pi)
+                recess = -0.035 * y_vent_f * x_vent_f
+            else:
+                recess = 0.0
+
+            z = z_base + camber + bulge + recess
+            all_verts.append([round(float(x), 4), round(float(y), 4), round(float(z), 4)])
+
+    for i in range(ny_h):
+        for j in range(nx_h):
+            v0 = h_base + i * (nx_h + 1) + j
+            v1 = v0 + 1
+            v2 = h_base + (i + 1) * (nx_h + 1) + (j + 1)
+            v3 = h_base + (i + 1) * (nx_h + 1) + j
+            all_faces.append([v0, v1, v2, v3])
+
+    # Downward shutline perimeter return flange
+    flange_base = len(all_verts)
+    for i in range(ny_h + 1):
+        for side in (0, nx_h):
+            v_idx = h_base + i * (nx_h + 1) + side
+            orig_v = all_verts[v_idx]
+            all_verts.append([orig_v[0], orig_v[1], round(orig_v[2] - 0.025, 4)])
+
+    for i in range(ny_h):
+        # Left edge flange
+        v_top0 = h_base + i * (nx_h + 1)
+        v_top1 = h_base + (i + 1) * (nx_h + 1)
+        v_bot0 = flange_base + i * 2
+        v_bot1 = flange_base + (i + 1) * 2
+        all_faces.append([v_top0, v_bot0, v_bot1, v_top1])
+
+        # Right edge flange
+        v_top0_r = h_base + i * (nx_h + 1) + nx_h
+        v_top1_r = h_base + (i + 1) * (nx_h + 1) + nx_h
+        v_bot0_r = flange_base + i * 2 + 1
+        v_bot1_r = flange_base + (i + 1) * 2 + 1
+        all_faces.append([v_top0_r, v_top1_r, v_bot1_r, v_bot0_r])
+
+    # Louver extraction slats
+    for side in (-1, 1):
+        for lv in range(3):
+            lv_base = len(all_verts)
+            y_lv = 1.300 + lv * 0.100
+            for ku in (0, 1):
+                x_lv = side * (0.200 if ku == 0 else 0.360)
+                for kv in (0, 1):
+                    z_lv = 0.680 + (0.012 if kv == 1 else 0.0)
+                    all_verts.append([round(float(x_lv), 4), round(float(y_lv + kv * 0.035), 4), round(float(z_lv), 4)])
+            if side < 0:
+                all_faces.append([lv_base, lv_base + 1, lv_base + 3, lv_base + 2])
+            else:
+                all_faces.append([lv_base, lv_base + 2, lv_base + 3, lv_base + 1])
+
+    return all_verts, all_faces
+
+
+def build_hood(materials: Dict[str, Any], collections: Dict[str, Any]) -> Any:
+    """Construct GTR_Hood inside Blender C RAM."""
+    if not HAS_BPY:
+        return None
+
+    verts, faces = generate_hood_mesh_data()
+    mesh = bpy.data.meshes.new("GTR_Hood_Mesh")
+    bm = bmesh.new()
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+
+    for f_indices in faces:
+        try:
+            bm.faces.new([bm_verts[idx] for idx in f_indices])
+        except ValueError:
+            pass
+
+    for f in bm.faces:
+        f.smooth = True
+
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new("GTR_Hood", mesh)
+
+    if "MAT_GTR_Paint_Gunmetal" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Paint_Gunmetal"])
+    if "MAT_GTR_Carbon_Satin" in materials:
+        obj.data.materials.append(materials["MAT_GTR_Carbon_Satin"])
+
+    bev = obj.modifiers.new("Auto_Bevel", 'BEVEL')
+    bev.width = 0.005
+    bev.segments = 2
+    bev.profile = 0.5
+    bev.harden_normals = True
+
+    wn = obj.modifiers.new("Auto_WeightedNormal", 'WEIGHTED_NORMAL')
+    wn.keep_sharp = True
+
+    col = collections.get("01_Body_Structure", bpy.context.scene.collection)
+    col.objects.link(obj)
+
+    return obj
