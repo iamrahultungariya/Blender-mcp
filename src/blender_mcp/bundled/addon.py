@@ -1985,6 +1985,12 @@ class BlenderMCPServer:
             return {"status": "success", "result": self.crop_reference_region(**params)}
         if cmd_type == "get_component_tree":
             return {"status": "success", "result": self.get_component_tree(**params)}
+        if cmd_type == "create_cushioned_profile":
+            return {"status": "success", "result": self.create_cushioned_profile(**params)}
+        if cmd_type == "create_architectural_wall":
+            return {"status": "success", "result": self.create_architectural_wall(**params)}
+        if cmd_type == "create_profile_sweep_molding":
+            return {"status": "success", "result": self.create_profile_sweep_molding(**params)}
         if cmd_type == "audit_mesh_topology":
             return {"status": "success", "result": self.audit_mesh_topology(**params)}
         if cmd_type == "inspect_specular_clay_pass":
@@ -3592,47 +3598,55 @@ class BlenderMCPServer:
 
     def get_component_tree(self, archetype="VEHICLE"):
         """Return formal 4-level component tree decomposition (Asset -> System -> Component -> Detail)."""
-        arch = (archetype or "VEHICLE").upper()
-        if arch == "VEHICLE" or "CAR" in arch or "VAN" in arch:
-            return {
-                "archetype": "VEHICLE",
-                "systems": {
-                    "body_shell": {
-                        "strategy": "subdivision_cage",
-                        "components": ["hood_bonnet", "fenders_left_right", "cab_roof", "cargo_box", "rear_doors"],
-                        "datums": ["centerline", "axle_planes", "beltline_z"]
-                    },
-                    "aerodynamics": {
-                        "strategy": "subdivision_cage",
-                        "components": ["front_bumper_cover", "lower_splitter", "radiator_grille_opening", "brake_cooling_ducts"],
-                        "datums": ["ground_plane", "approach_angle"]
-                    },
-                    "lighting": {
-                        "strategy": "boolean_bevel",
-                        "components": ["headlamp_housings", "projector_lenses", "drl_strips", "rear_vertical_taillights"],
-                        "datums": ["fascia_recesses"]
-                    },
-                    "wheel_assembly": {
-                        "strategy": "subdivision_cage",
-                        "components": ["treaded_tires", "rim_barrel", "10_hole_alloy_face", "center_hub_cap", "brake_disc_caliper"],
-                        "datums": ["wheel_centers", "tire_envelopes"]
-                    },
-                    "secondary_trim": {
-                        "strategy": "bezier_curve",
-                        "components": ["roof_rails", "window_weather_seals", "side_rubbing_strips", "emergency_cable_harnesses"],
-                        "datums": ["surface_contours"]
-                    }
-                }
-            }
-        return {
-            "archetype": arch,
-            "systems": {
-                "primary_structure": {"strategy": "subdivision_cage", "components": ["main_chassis"]},
-                "secondary_housings": {"strategy": "boolean_bevel", "components": ["panels", "cutouts"]},
-                "tubes_and_cables": {"strategy": "bezier_curve", "components": ["harnesses", "pipes"]},
-                "wear_and_finish": {"strategy": "sculpt_and_bake", "components": ["surface_breakup"]}
-            }
-        }
+        from blender_mcp.bmesh_toolkit import get_component_tree as _get_tree
+        return _get_tree(archetype=archetype)
+
+    def create_cushioned_profile(self, width=0.8, depth=0.8, thickness=0.15, crown_height=0.04, segments=12, name="Cushion", collection_name=None):
+        """Create organic puffed quad cushion with double-parabolic crown in scene."""
+        from blender_mcp.bmesh_toolkit import create_cushioned_profile as _gen
+        bm = bmesh.new()
+        res = _gen(width=width, depth=depth, thickness=thickness, crown_height=crown_height, segments=segments, bm=bm)
+        mesh = bpy.data.meshes.new(name)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+        obj = bpy.data.objects.new(name, mesh)
+        col = bpy.data.collections.get(collection_name) if collection_name else bpy.context.scene.collection
+        col.objects.link(obj)
+        res["object_name"] = obj.name
+        return res
+
+    def create_architectural_wall(self, length=4.0, height=3.0, thickness=0.25, openings=None, name="ArchitecturalWall", collection_name=None):
+        """Construct solid, manifold architectural wall with real thickness and cutout reveals."""
+        from blender_mcp.bmesh_toolkit import create_architectural_wall_with_openings as _gen
+        bm = bmesh.new()
+        res = _gen(length=length, height=height, thickness=thickness, openings=openings, bm=bm)
+        mesh = bpy.data.meshes.new(name)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+        obj = bpy.data.objects.new(name, mesh)
+        col = bpy.data.collections.get(collection_name) if collection_name else bpy.context.scene.collection
+        col.objects.link(obj)
+        res["object_name"] = obj.name
+        return res
+
+    def create_profile_sweep_molding(self, path_points=None, profile_type="BASEBOARD", height=0.12, depth=0.02, name="MoldingSweep", collection_name=None):
+        """Extrude classical architectural profile along 3D path."""
+        from blender_mcp.bmesh_toolkit import create_profile_sweep_molding as _gen
+        if not path_points or len(path_points) < 2:
+            return {"error": "path_points requires at least 2 points"}
+        bm = bmesh.new()
+        res = _gen(path_points=path_points, profile_type=profile_type, height=height, depth=depth, bm=bm)
+        mesh = bpy.data.meshes.new(name)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+        obj = bpy.data.objects.new(name, mesh)
+        col = bpy.data.collections.get(collection_name) if collection_name else bpy.context.scene.collection
+        col.objects.link(obj)
+        res["object_name"] = obj.name
+        return res
 
     def audit_mesh_topology(self, object_name, auto_repair=False):
         """Audit mesh object topology for non-manifold edges, loose vertices, and watertightness."""

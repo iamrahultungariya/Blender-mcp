@@ -25,3 +25,12 @@ def test_create_profile_sweep_molding():
     res = create_profile_sweep_molding(path_points=path, profile_type="BASEBOARD", height=0.12, depth=0.02)
     assert res["status"] == "success"
     assert res["segments"] >= 2
+
+
+def test_spatial_thinking_engine_imports_in_server():
+    import blender_mcp.server as srv
+    assert hasattr(srv, "get_component_tree")
+    assert hasattr(srv, "generate_spatial_blueprint")
+    assert hasattr(srv, "create_cushioned_profile")
+    assert hasattr(srv, "create_architectural_wall")
+

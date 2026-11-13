@@ -2753,6 +2753,128 @@ async def get_pipeline_status() -> str:
     return json.dumps(result, indent=2)
 
 
+@mcp.tool()
+async def generate_spatial_blueprint(
+    query: str,
+) -> str:
+    """Generate universal spatial blueprint and ergonomic datums across Architecture, Interiors, Furniture, and Vehicles.
+
+    Calculates archetypal dimensions, clearances, component decomposition, and enforces the Zero Unfilleted
+    Primitives Anti-Boxy mandate.
+
+    Parameters:
+    - query: User prompt describing the space, building, furniture piece, or vehicle
+    """
+    from .spatial_thinking import SpatialThinkingEngine
+    engine = SpatialThinkingEngine()
+    result = engine.generate_spatial_blueprint(query)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def create_cushioned_profile(
+    width: float = 0.8,
+    depth: float = 0.8,
+    thickness: float = 0.15,
+    crown_height: float = 0.04,
+    segments: int = 12,
+    name: str = "Cushion",
+    collection_name: str | None = None,
+) -> str:
+    """Generate an organic, puffed quad cushion mesh with double-parabolic crown curvature.
+
+    Eliminates flat-slab sofa block syndrome by elevating the center of the cushion:
+    Z(u,v) = z0 + crown * (1 - u^2) * (1 - v^2).
+
+    Parameters:
+    - width: X-axis width in meters (default 0.8)
+    - depth: Y-axis depth in meters (default 0.8)
+    - thickness: Base thickness in meters (default 0.15)
+    - crown_height: Center parabolic elevation dome (default 0.04m)
+    - segments: Grid subdivision resolution (default 12)
+    - name: Object name in Blender
+    - collection_name: Optional target collection
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("create_cushioned_profile", {
+        "width": width,
+        "depth": depth,
+        "thickness": thickness,
+        "crown_height": crown_height,
+        "segments": segments,
+        "name": name,
+        "collection_name": collection_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_architectural_wall(
+    length: float = 4.0,
+    height: float = 3.0,
+    thickness: float = 0.25,
+    openings: list[dict] | None = None,
+    name: str = "ArchitecturalWall",
+    collection_name: str | None = None,
+) -> str:
+    """Construct solid, manifold architectural wall with real thickness and cutout window/door reveals.
+
+    Enforces minimum 0.20m exterior wall thickness and generates recessed jambs, sills, and lintels.
+
+    Parameters:
+    - length: Wall length along X-axis in meters
+    - height: Wall height along Z-axis in meters
+    - thickness: Wall thickness in meters (default 0.25m, min 0.10m)
+    - openings: List of opening dicts: [{'type': 'window'|'door', 'x': 1.0, 'z': 0.9, 'width': 1.2, 'height': 1.4}]
+    - name: Object name in Blender
+    - collection_name: Optional target collection
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("create_architectural_wall", {
+        "length": length,
+        "height": height,
+        "thickness": thickness,
+        "openings": openings or [],
+        "name": name,
+        "collection_name": collection_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_profile_sweep_molding(
+    path_points: list[list[float]],
+    profile_type: str = "BASEBOARD",
+    height: float = 0.12,
+    depth: float = 0.02,
+    name: str = "MoldingSweep",
+    collection_name: str | None = None,
+) -> str:
+    """Extrude classical architectural profile (baseboard, crown molding, casing) along a 3D path.
+
+    Enforces interior room junction finishing with profiled trims and roundovers.
+
+    Parameters:
+    - path_points: Ordered list of 3D path points [[x, y, z], ...]
+    - profile_type: 'BASEBOARD', 'CROWN_MOLDING', or 'CASING'
+    - height: Cross-section height in meters (default 0.12m)
+    - depth: Cross-section wall projection in meters (default 0.02m)
+    - name: Object name in Blender
+    - collection_name: Optional target collection
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("create_profile_sweep_molding", {
+        "path_points": path_points,
+        "profile_type": profile_type,
+        "height": height,
+        "depth": depth,
+        "name": name,
+        "collection_name": collection_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+
 
 
 
