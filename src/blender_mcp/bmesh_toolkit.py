@@ -1043,6 +1043,339 @@ def crop_reference_region(
         return {"status": "error", "error": str(e)}
 
 
+# ==============================================================================
+# 11. Procedural Spatial & Anti-Boxy Geometry Generators
+# ==============================================================================
+
+def create_cushioned_profile(
+    width: float,
+    depth: float,
+    thickness: float,
+    crown_height: float = 0.04,
+    segments: int = 12,
+    bm: Any = None
+) -> dict:
+    """Generate organic, puffed quad cushion mesh with double-parabolic crown curvature.
+
+    Eliminates flat-slab sofa block syndrome by elevating the center of the cushion:
+    Z_top(u, v) = +thickness/2 + crown_height * (1 - u^2) * (1 - v^2)
+    Z_bot(u, v) = -thickness/2 - crown_height * (1 - u^2) * (1 - v^2)
+    where u, v in [-1, 1].
+    """
+    nx = max(2, int(segments))
+    ny = max(2, int(segments))
+
+    verts: List[List[float]] = []
+
+    # Top grid: index offset 0 .. (nx+1)*(ny+1) - 1
+    top_indices = {}
+    idx = 0
+    for j in range(ny + 1):
+        v_coord = 2.0 * (j / ny) - 1.0
+        y = -depth / 2.0 + (j / ny) * depth
+        for i in range(nx + 1):
+            u_coord = 2.0 * (i / nx) - 1.0
+            x = -width / 2.0 + (i / nx) * width
+            z = (thickness / 2.0) + crown_height * (1.0 - u_coord ** 2) * (1.0 - v_coord ** 2)
+            verts.append([float(x), float(y), float(z)])
+            top_indices[(i, j)] = idx
+            idx += 1
+
+    # Bottom grid: index offset (nx+1)*(ny+1) .. 2*(nx+1)*(ny+1) - 1
+    bottom_indices = {}
+    for j in range(ny + 1):
+        v_coord = 2.0 * (j / ny) - 1.0
+        y = -depth / 2.0 + (j / ny) * depth
+        for i in range(nx + 1):
+            u_coord = 2.0 * (i / nx) - 1.0
+            x = -width / 2.0 + (i / nx) * width
+            z = -(thickness / 2.0) - crown_height * (1.0 - u_coord ** 2) * (1.0 - v_coord ** 2)
+            verts.append([float(x), float(y), float(z)])
+            bottom_indices[(i, j)] = idx
+            idx += 1
+
+    faces: List[List[int]] = []
+
+    # Top faces (+Z normal, CCW when viewed from above)
+    for j in range(ny):
+        for i in range(nx):
+            v0 = top_indices[(i, j)]
+            v1 = top_indices[(i + 1, j)]
+            v2 = top_indices[(i + 1, j + 1)]
+            v3 = top_indices[(i, j + 1)]
+            faces.append([v0, v1, v2, v3])
+
+    # Bottom faces (-Z normal)
+    for j in range(ny):
+        for i in range(nx):
+            v0 = bottom_indices[(i, j)]
+            v1 = bottom_indices[(i, j + 1)]
+            v2 = bottom_indices[(i + 1, j + 1)]
+            v3 = bottom_indices[(i + 1, j)]
+            faces.append([v0, v1, v2, v3])
+
+    # Perimeter skirt faces connecting top and bottom edges
+    # South edge (j=0)
+    for i in range(nx):
+        t0 = top_indices[(i, 0)]
+        t1 = top_indices[(i + 1, 0)]
+        b0 = bottom_indices[(i, 0)]
+        b1 = bottom_indices[(i + 1, 0)]
+        faces.append([t0, b0, b1, t1])
+
+    # East edge (i=nx)
+    for j in range(ny):
+        t0 = top_indices[(nx, j)]
+        t1 = top_indices[(nx, j + 1)]
+        b0 = bottom_indices[(nx, j)]
+        b1 = bottom_indices[(nx, j + 1)]
+        faces.append([t0, t1, b1, b0])
+
+    # North edge (j=ny)
+    for i in range(nx):
+        t0 = top_indices[(i, ny)]
+        t1 = top_indices[(i + 1, ny)]
+        b0 = bottom_indices[(i, ny)]
+        b1 = bottom_indices[(i + 1, ny)]
+        faces.append([t1, b1, b0, t0])
+
+    # West edge (i=0)
+    for j in range(ny):
+        t0 = top_indices[(0, j)]
+        t1 = top_indices[(0, j + 1)]
+        b0 = bottom_indices[(0, j)]
+        b1 = bottom_indices[(0, j + 1)]
+        faces.append([t1, t0, b0, b1])
+
+    max_z = float(np.max([v[2] for v in verts]))
+
+    if HAS_BPY:
+        if bm is None:
+            bm = bmesh.new()
+        bm_verts = [bm.verts.new(v) for v in verts]
+        for f in faces:
+            try:
+                bm.faces.new([bm_verts[k] for k in f])
+            except ValueError:
+                pass
+        bm.verts.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+    return {
+        "status": "success",
+        "vert_count": len(verts),
+        "face_count": len(faces),
+        "is_crowned": True,
+        "max_z": max_z,
+        "width": width,
+        "depth": depth,
+        "thickness": thickness,
+        "crown_height": crown_height,
+        "verts": verts,
+        "faces": faces,
+    }
+
+
+def create_architectural_wall_with_openings(
+    length: float,
+    height: float,
+    thickness: float = 0.25,
+    openings: list[dict] | None = None,
+    bm: Any = None
+) -> dict:
+    """Construct solid, manifold architectural wall with real thickness and cutout reveals."""
+    thick = max(0.10, float(thickness))
+    hy = thick / 2.0
+    openings_list = openings or []
+
+    # If no openings, return a solid box wall
+    if not openings_list:
+        v, f = calculate_box_geometry((0.0, -hy, 0.0), (length, hy, height))
+        if HAS_BPY:
+            if bm is None:
+                bm = bmesh.new()
+            bm_verts = [bm.verts.new(vert) for vert in v]
+            for face in f:
+                try:
+                    bm.faces.new([bm_verts[k] for k in face])
+                except ValueError:
+                    pass
+            bm.verts.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+        return {
+            "status": "success",
+            "length": length,
+            "height": height,
+            "thickness": thick,
+            "openings": [],
+            "vert_count": len(v),
+            "face_count": len(f),
+            "verts": v,
+            "faces": f,
+        }
+
+    all_verts: List[List[float]] = []
+    all_faces: List[List[int]] = []
+
+    def add_sub_box(min_xyz: Tuple[float, float, float], max_xyz: Tuple[float, float, float]):
+        if max_xyz[0] <= min_xyz[0] or max_xyz[2] <= min_xyz[2]:
+            return
+        base_idx = len(all_verts)
+        bv, bf = calculate_box_geometry(min_xyz, max_xyz)
+        all_verts.extend(bv)
+        for face in bf:
+            all_faces.append([base_idx + idx for idx in face])
+
+    sorted_ops = sorted(openings_list, key=lambda o: o.get("x", 0.0))
+
+    cur_x = 0.0
+    for op in sorted_ops:
+        ox = float(op.get("x", 0.0))
+        oz = float(op.get("z", 0.0))
+        ow = float(op.get("width", 1.0))
+        oh = float(op.get("height", 1.0))
+
+        # Left wall segment before this opening
+        if ox > cur_x:
+            add_sub_box((cur_x, -hy, 0.0), (ox, hy, height))
+
+        # Sill segment below opening (if raised window sill)
+        if oz > 0.0:
+            add_sub_box((ox, -hy, 0.0), (ox + ow, hy, oz))
+
+        # Lintel segment above opening (up to ceiling)
+        top_z = oz + oh
+        if top_z < height:
+            add_sub_box((ox, -hy, top_z), (ox + ow, hy, height))
+
+        cur_x = ox + ow
+
+    # Trailing wall segment after last opening
+    if cur_x < length:
+        add_sub_box((cur_x, -hy, 0.0), (length, hy, height))
+
+    if HAS_BPY:
+        if bm is None:
+            bm = bmesh.new()
+        bm_verts = [bm.verts.new(vert) for vert in all_verts]
+        for f in all_faces:
+            try:
+                bm.faces.new([bm_verts[k] for k in f])
+            except ValueError:
+                pass
+        bm.verts.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+    return {
+        "status": "success",
+        "length": length,
+        "height": height,
+        "thickness": thick,
+        "openings": openings_list,
+        "vert_count": len(all_verts),
+        "face_count": len(all_faces),
+        "verts": all_verts,
+        "faces": all_faces,
+    }
+
+
+def create_profile_sweep_molding(
+    path_points: list[tuple[float, float, float]] | list[list[float]],
+    profile_type: str = "BASEBOARD",
+    height: float = 0.12,
+    depth: float = 0.02,
+    bm: Any = None
+) -> dict:
+    """Extrude classical architectural profile (baseboard, crown molding, casing) along 3D path."""
+    pt_type = profile_type.upper()
+    pts = [tuple(p) for p in path_points]
+    if len(pts) < 2:
+        return {"error": "path_points requires at least 2 points"}
+
+    # Define 2D cross-section contour (depth_offset, height_offset)
+    if pt_type == "BASEBOARD":
+        contour = [
+            (0.0, 0.0),
+            (depth, 0.0),
+            (depth, height * 0.70),
+            (depth * 0.70, height * 0.88),
+            (depth * 0.35, height * 0.96),
+            (0.0, height),
+        ]
+    elif pt_type == "CROWN_MOLDING":
+        contour = [
+            (0.0, 0.0),
+            (depth * 0.30, height * 0.20),
+            (depth * 0.80, height * 0.50),
+            (depth, height * 0.80),
+            (depth, height),
+            (0.0, height),
+        ]
+    else:  # CASING / TRIM
+        contour = [
+            (0.0, 0.0),
+            (depth, 0.0),
+            (depth, height * 0.85),
+            (depth * 0.5, height),
+            (0.0, height),
+        ]
+
+    verts: List[List[float]] = []
+    faces: List[List[int]] = []
+    num_contour = len(contour)
+
+    ring_indices: List[List[int]] = []
+    for p_idx, pt in enumerate(pts):
+        if p_idx < len(pts) - 1:
+            tan = np.array(pts[p_idx + 1]) - np.array(pt)
+        else:
+            tan = np.array(pt) - np.array(pts[p_idx - 1])
+        norm_tan = float(np.linalg.norm(tan[:2]))
+        if norm_tan < 1e-6:
+            perp = np.array([0.0, 1.0, 0.0])
+        else:
+            perp = np.array([-tan[1] / norm_tan, tan[0] / norm_tan, 0.0])
+
+        current_ring: List[int] = []
+        for d_val, h_val in contour:
+            pos = np.array(pt) + d_val * perp + np.array([0.0, 0.0, h_val])
+            current_ring.append(len(verts))
+            verts.append(pos.tolist())
+        ring_indices.append(current_ring)
+
+    for seg in range(len(pts) - 1):
+        r0 = ring_indices[seg]
+        r1 = ring_indices[seg + 1]
+        for c in range(num_contour - 1):
+            faces.append([r0[c], r1[c], r1[c + 1], r0[c + 1]])
+
+    faces.append(ring_indices[0])
+    faces.append(list(reversed(ring_indices[-1])))
+
+    if HAS_BPY:
+        if bm is None:
+            bm = bmesh.new()
+        bm_verts = [bm.verts.new(vert) for vert in verts]
+        for f in faces:
+            try:
+                bm.faces.new([bm_verts[k] for k in f])
+            except ValueError:
+                pass
+        bm.verts.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+    return {
+        "status": "success",
+        "profile_type": pt_type,
+        "segments": len(pts) - 1,
+        "vert_count": len(verts),
+        "face_count": len(faces),
+        "verts": verts,
+        "faces": faces,
+    }
+
+
+
 
 
 
