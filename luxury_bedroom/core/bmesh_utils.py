@@ -95,6 +95,7 @@ def create_beveled_box(
     cx, cy, cz = ox, oy, oz + hz
 
     if HAS_BMESH and isinstance(bm, bmesh.types.BMesh):
+        existing_faces = set(bm.faces)
         res = bmesh.ops.create_cube(bm, size=1.0)
         cube_verts = res["verts"]
         mat_trans = Matrix.Translation(Vector((cx, cy, cz))) @ Matrix.Diagonal(
@@ -115,9 +116,9 @@ def create_beveled_box(
                     affect="EDGES",
                 )
 
-        for f in bm.faces:
-            if any(v in cube_verts for v in f.verts):
-                f.material_index = mat_index
+        new_faces = [f for f in bm.faces if f not in existing_faces]
+        for f in new_faces:
+            f.material_index = mat_index
         return bm
     else:
         # Mock / Fallback pure python generator

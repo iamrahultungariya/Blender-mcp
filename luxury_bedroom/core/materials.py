@@ -150,12 +150,37 @@ class MaterialLibrary:
 
         return mat
 
+    def setup_blender_materials(self) -> None:
+        """Pre-create all physical materials in bpy.data.materials."""
+        if not HAS_BPY or bpy is None or not hasattr(bpy, "data"):
+            return
+        for name in self.get_material_names():
+            self.create_or_get_material(name)
+
     def assign_to_object(self, obj: Any) -> None:
         """Assign all materials in library order to an object so face.material_index matches get_index."""
         if not HAS_BPY or bpy is None or obj is None or not hasattr(obj, "data"):
             return
 
-        obj.data.materials.clear()
-        for name in self.get_material_names():
-            mat = self.create_or_get_material(name)
-            obj.data.materials.append(mat)
+        expected_names = self.get_material_names()
+        current_mats = list(obj.data.materials)
+
+        # Check if already correctly assigned
+        if len(current_mats) == len(expected_names):
+            all_match = all(
+                m and m.name == f"M_RefSuite_{expected_names[i]}" for i, m in enumerate(current_mats)
+            )
+            if all_match:
+                return
+
+        mats = [self.create_or_get_material(name) for name in expected_names]
+
+        if len(current_mats) == 0:
+            for m in mats:
+                obj.data.materials.append(m)
+        else:
+            for idx, m in enumerate(mats):
+                if idx < len(obj.data.materials):
+                    obj.data.materials[idx] = m
+                else:
+                    obj.data.materials.append(m)
