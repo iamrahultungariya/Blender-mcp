@@ -494,3 +494,556 @@ def apply_automotive_modifiers(
         wn_mod.weight = 50
 
     return {"status": "applied", "modifiers": [m.name for m in obj.modifiers]}
+
+
+def boolean_difference(target_obj: Any, cutter_obj: Any, apply: bool = True) -> dict:
+    """Carve cutter_obj from target_obj using boolean difference."""
+    if not HAS_BPY or target_obj is None or cutter_obj is None:
+        return {"status": "skipped_or_no_bpy"}
+
+    init_verts = len(target_obj.data.vertices) if hasattr(target_obj, "data") and hasattr(target_obj.data, "vertices") else 0
+    bool_mod = target_obj.modifiers.new("CLAS_Boolean_Diff", "BOOLEAN")
+    bool_mod.operation = "DIFFERENCE"
+    bool_mod.solver = "EXACT"
+    bool_mod.object = cutter_obj
+
+    if apply:
+        applied = False
+        try:
+            with bpy.context.temp_override(object=target_obj, active_object=target_obj):
+                bpy.ops.object.modifier_apply(modifier=bool_mod.name)
+                applied = True
+        except Exception:
+            pass
+
+        if not applied:
+            depsgraph = bpy.context.evaluated_depsgraph_get()
+            eval_obj = target_obj.evaluated_get(depsgraph)
+            new_mesh = bpy.data.meshes.new_from_object(eval_obj)
+            old_mesh = target_obj.data
+            target_obj.modifiers.remove(bool_mod)
+            target_obj.data = new_mesh
+            bpy.data.meshes.remove(old_mesh)
+
+    final_verts = len(target_obj.data.vertices) if hasattr(target_obj, "data") and hasattr(target_obj.data, "vertices") else 0
+    return {"status": "success", "initial_verts": init_verts, "final_verts": final_verts}
+
+
+def carve_cavity(
+    target_obj: Any,
+    cutter_spec: Any,
+    bevel_segments: int = 2,
+    harden_normals: bool = True
+) -> dict:
+    """Carve cavity in target_obj from parametric specification or cutter object."""
+    if not HAS_BPY or target_obj is None:
+        return {"status": "skipped_or_no_bpy"}
+
+    is_temporary_cutter = False
+    cutter_obj = None
+
+    if isinstance(cutter_spec, str):
+        cutter_obj = bpy.data.objects.get(cutter_spec)
+        if not cutter_obj:
+            return {"error": f"Cutter object '{cutter_spec}' not found"}
+    elif isinstance(cutter_spec, dict):
+        if "object" in cutter_spec or "name" in cutter_spec:
+            name = cutter_spec.get("name") or cutter_spec.get("object")
+            cutter_obj = bpy.data.objects.get(name)
+            if not cutter_obj:
+                return {"error": f"Cutter object '{name}' not found"}
+        else:
+            # Parametric cutter creation
+            c_type = cutter_spec.get("type", "box").lower()
+            loc = cutter_spec.get("location", (0.0, 0.0, 0.0))
+            rot = cutter_spec.get("rotation", (0.0, 0.0, 0.0))
+            cutter_mesh = bpy.data.meshes.new("_tmp_cutter_mesh")
+            cutter_obj = bpy.data.objects.new("_tmp_cutter_obj", cutter_mesh)
+            bpy.context.scene.collection.objects.link(cutter_obj)
+            is_temporary_cutter = True
+
+            bm = bmesh.new()
+            if c_type == "cylinder":
+                radius = float(cutter_spec.get("radius", 0.5))
+                depth = float(cutter_spec.get("depth", 0.5))
+                segs = int(cutter_spec.get("segments", 32))
+                bmesh.ops.create_cone(
+                    bm,
+                    cap_ends=True,
+                    segments=segs,
+                    radius1=radius,
+                    radius2=radius,
+                    depth=depth
+                )
+            else:  # default box
+                size = cutter_spec.get("size", (1.0, 1.0, 1.0))
+                if isinstance(size, (int, float)):
+                    sx, sy, sz = float(size), float(size), float(size)
+                else:
+                    sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
+                bmesh.ops.create_cube(bm, size=1.0)
+                bmesh.ops.scale(bm, vec=(sx, sy, sz), verts=bm.verts)
+
+            bm.to_mesh(cutter_mesh)
+            bm.free()
+
+            cutter_obj.location = loc
+            cutter_obj.rotation_euler = rot
+
+    if not cutter_obj:
+        return {"error": "Invalid cutter_spec provided"}
+
+    # Execute boolean difference
+    res = boolean_difference(target_obj, cutter_obj, apply=True)
+
+    # Clean up temporary cutter
+    if is_temporary_cutter:
+        mesh_to_del = cutter_obj.data
+        bpy.data.objects.remove(cutter_obj, do_unlink=True)
+        if mesh_to_del:
+            bpy.data.meshes.remove(mesh_to_del, do_unlink=True)
+
+    # Optional bevel & normal hardening
+    if bevel_segments > 0:
+        bev = target_obj.modifiers.new("CLAS_Bevel", "BEVEL")
+        bev.segments = int(bevel_segments)
+        bev.harden_normals = bool(harden_normals)
+        bev.limit_method = "ANGLE"
+        bev.angle_limit = math.radians(35.0)
+
+    return {"target": target_obj.name, "carved": True, "details": res}
+
+
+def tile_quadrant_buffers(
+    top_left: np.ndarray,
+    top_right: np.ndarray,
+    bottom_left: np.ndarray,
+    bottom_right: np.ndarray
+) -> np.ndarray:
+    """Tile 4 quadrant pixel buffers (H, W, C) into a 2x2 grid (2H, 2W, C)."""
+    top_row = np.concatenate([top_left, top_right], axis=1)
+    bottom_row = np.concatenate([bottom_left, bottom_right], axis=1)
+    return np.concatenate([top_row, bottom_row], axis=0)
+
+
+def compute_laplacian_curvature(
+    verts: np.ndarray,
+    edges: Any,
+    normals: np.ndarray
+) -> np.ndarray:
+    """Compute discrete graph Laplacian curvature per vertex.
+
+    Returns:
+    - curvature: (N,) float32 array, where:
+        negative = convex peak / sharp ridge
+        positive = concave crevice / cavity
+    """
+    num_verts = len(verts)
+    neighbors = [[] for _ in range(num_verts)]
+    for e in edges:
+        u, v = int(e[0]), int(e[1])
+        if 0 <= u < num_verts and 0 <= v < num_verts:
+            neighbors[u].append(v)
+            neighbors[v].append(u)
+
+    curv = np.zeros(num_verts, dtype=np.float32)
+    for i in range(num_verts):
+        nbrs = neighbors[i]
+        if not nbrs:
+            continue
+        laplacian = np.mean(verts[nbrs], axis=0) - verts[i]
+        curv[i] = float(np.dot(laplacian, normals[i]))
+
+    return curv
+
+
+def eval_cubic_bezier_curve(
+    p0: Any,
+    p1: Any,
+    p2: Any,
+    p3: Any,
+    num_samples: int = 16
+) -> np.ndarray:
+    """Evaluate cubic Bezier curve points using Bernstein polynomials."""
+    p0_arr = np.asarray(p0, dtype=np.float32)
+    p1_arr = np.asarray(p1, dtype=np.float32)
+    p2_arr = np.asarray(p2, dtype=np.float32)
+    p3_arr = np.asarray(p3, dtype=np.float32)
+
+    t = np.linspace(0.0, 1.0, int(num_samples), dtype=np.float32)[:, None]
+    om_t = 1.0 - t
+
+    b0 = om_t**3
+    b1 = 3.0 * (om_t**2) * t
+    b2 = 3.0 * om_t * (t**2)
+    b3 = t**3
+
+    return (b0 * p0_arr + b1 * p1_arr + b2 * p2_arr + b3 * p3_arr).astype(np.float32)
+
+
+def apply_smart_uv_unwrapping(
+    obj: Any,
+    angle_limit_deg: float = 66.0,
+    island_margin: float = 0.02
+) -> dict:
+    """Ensure obj has valid UVMap and apply Smart UV Project for game-ready export."""
+    if not HAS_BPY or obj is None or obj.type != 'MESH':
+        return {"status": "skipped_or_no_bpy"}
+
+    mesh = obj.data
+    if not mesh.uv_layers:
+        mesh.uv_layers.new(name="UVMap")
+    mesh.uv_layers.active = mesh.uv_layers[0]
+
+    try:
+        with bpy.context.temp_override(object=obj, active_object=obj, selected_editable_objects=[obj]):
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.uv.smart_project(
+                angle_limit=math.radians(angle_limit_deg),
+                island_margin=island_margin
+            )
+            bpy.ops.object.mode_set(mode='OBJECT')
+        return {
+            "status": "unwrapped",
+            "uv_layer": mesh.uv_layers.active.name,
+            "polygons": len(mesh.polygons)
+        }
+    except Exception as e:
+        return {"status": "fallback", "error": str(e)}
+
+
+def carve_wheel_well_cavities(
+    body_obj: Any,
+    wheel_specs: dict,
+    arch_clearance: float = 0.08,
+    well_depth: float = 0.35
+) -> dict:
+    """Carve 4 recessed wheel well cavities into the body_obj using boolean difference."""
+    if not HAS_BPY or body_obj is None or body_obj.type != 'MESH':
+        return {"status": "skipped_or_no_bpy"}
+
+    arch_radius = float(wheel_specs.get("arch_radius", 0.455))
+    results = []
+
+    arch_keys = ["front_left", "front_right", "rear_left", "rear_right"]
+    for key in arch_keys:
+        pos = wheel_specs.get(key)
+        if not pos:
+            continue
+        cx, cy, cz = float(pos[0]), float(pos[1]), float(pos[2])
+        sign_x = 1.0 if cx >= 0 else -1.0
+        cutter_loc = (cx - sign_x * (well_depth * 0.3), cy, cz)
+
+        cutter_spec = {
+            "type": "cylinder",
+            "radius": arch_radius,
+            "depth": well_depth,
+            "location": cutter_loc,
+            "rotation": (0.0, math.radians(90.0), 0.0),
+            "segments": 32
+        }
+        res = carve_cavity(body_obj, cutter_spec, bevel_segments=0, harden_normals=False)
+        results.append({"arch": key, "result": res})
+
+    return {"status": "carved", "wheel_wells": results}
+
+
+def get_component_tree(archetype: str = "VEHICLE") -> dict:
+    """Return formal 4-level component tree decomposition (Asset -> System -> Component -> Detail)."""
+    arch = archetype.upper()
+
+    # Domain 1: VEHICLE / AUTOMOTIVE
+    if arch == "VEHICLE" or any(v in arch for v in ["CAR", "VAN", "TRUCK", "SEDAN", "COUPE", "AUTOMOBILE", "SUPERCAR", "SUV"]):
+        return {
+            "archetype": "VEHICLE",
+            "domain": "VEHICLE",
+            "systems": {
+                "body_shell": {
+                    "strategy": "subdivision_cage",
+                    "components": ["hood_bonnet", "fenders_left_right", "cab_roof", "cargo_box", "rear_doors"],
+                    "datums": ["centerline", "axle_planes", "beltline_z"]
+                },
+                "aerodynamics": {
+                    "strategy": "subdivision_cage",
+                    "components": ["front_bumper_cover", "lower_splitter", "radiator_grille_opening", "brake_cooling_ducts"],
+                    "datums": ["ground_plane", "approach_angle"]
+                },
+                "lighting": {
+                    "strategy": "boolean_bevel",
+                    "components": ["headlamp_housings", "projector_lenses", "drl_strips", "rear_vertical_taillights"],
+                    "datums": ["fascia_recesses"]
+                },
+                "wheel_assembly": {
+                    "strategy": "subdivision_cage",
+                    "components": ["treaded_tires", "rim_barrel", "10_hole_alloy_face", "center_hub_cap", "brake_disc_caliper"],
+                    "datums": ["wheel_centers", "tire_envelopes"]
+                },
+                "secondary_trim": {
+                    "strategy": "bezier_curve",
+                    "components": ["roof_rails", "window_weather_seals", "side_rubbing_strips", "emergency_cable_harnesses"],
+                    "datums": ["surface_contours"]
+                }
+            }
+        }
+
+    # Domain 2: ARCHITECTURE (Houses, Villas, Buildings, Facades, Cabins)
+    if any(a in arch for a in ["ARCH", "HOUSE", "VILLA", "BUILDING", "FACADE", "CABIN", "COTTAGE", "MANSION"]):
+        return {
+            "archetype": arch,
+            "domain": "ARCHITECTURE",
+            "systems": {
+                "foundation_slab": {
+                    "strategy": "subdivision_cage",
+                    "components": ["ground_slab", "perimeter_grade_beams", "entry_porch_slab", "foundation_footings"],
+                    "datums": ["ground_plane_z0", "exterior_grade_offset"]
+                },
+                "structural_walls": {
+                    "strategy": "boolean_bevel",
+                    "components": ["exterior_cavity_walls", "load_bearing_piers", "interior_partitions", "lintel_bands"],
+                    "datums": ["finished_floor_z", "exterior_wall_thickness_280mm", "window_sill_height", "lintel_height"]
+                },
+                "roof_structure": {
+                    "strategy": "subdivision_cage",
+                    "components": ["primary_roof_planes", "fascia_trim_boards", "soffit_panels", "overhang_eaves", "parapet_caps"],
+                    "datums": ["ridge_line", "eaves_line", "overhang_projection_600mm"]
+                },
+                "fenestration": {
+                    "strategy": "boolean_bevel",
+                    "components": ["window_frames_and_mullions", "double_glazed_units", "exterior_sloped_sills", "entry_door_assembly"],
+                    "datums": ["rough_opening_reveals_150mm", "jamb_alignment"]
+                },
+                "architectural_trim": {
+                    "strategy": "bezier_curve",
+                    "components": ["corner_quoins", "exterior_molding_bands", "gutter_and_downspouts", "canopy_supports"],
+                    "datums": ["envelope_boundary_alignment"]
+                }
+            }
+        }
+
+    # Domain 3: INTERIOR SPACES (Living Rooms, Bedrooms, Kitchens)
+    if any(i in arch for i in ["ROOM", "INTERIOR", "BEDROOM", "KITCHEN", "BATHROOM", "LIVING"]):
+        return {
+            "archetype": arch,
+            "domain": "INTERIOR_SPACES",
+            "systems": {
+                "room_envelope": {
+                    "strategy": "boolean_bevel",
+                    "components": ["finished_flooring_layer", "perimeter_drywall_planes", "ceiling_plane", "recessed_ceiling_tray"],
+                    "datums": ["finished_floor_level", "clear_ceiling_height", "tray_drop_150mm"]
+                },
+                "trim_carpentry": {
+                    "strategy": "bezier_curve",
+                    "components": ["profiled_baseboards", "cove_crown_moldings", "door_architraves", "window_casing_surrounds"],
+                    "datums": ["floor_wall_junction", "wall_ceiling_junction", "casing_perimeter"]
+                },
+                "built_in_millwork": {
+                    "strategy": "boolean_bevel",
+                    "components": ["cabinet_carcasses", "countertops_with_waterfall_edge", "shaker_cabinet_doors", "recessed_kickplates"],
+                    "datums": ["countertop_datum_900mm", "backsplash_height_600mm"]
+                },
+                "ambient_lighting": {
+                    "strategy": "subdivision_cage",
+                    "components": ["recessed_pot_light_fixtures", "led_cove_troughs", "pendant_drop_fixtures", "flush_mount_diffusers"],
+                    "datums": ["ceiling_grid_centers", "cove_lip_datum"]
+                }
+            }
+        }
+
+    # Domain 4: FURNITURE & PRODUCT DESIGN (Sofas, Chairs, Tables, Beds, Desks)
+    if any(f in arch for f in ["SOFA", "COUCH", "CHAIR", "ARMCHAIR", "TABLE", "DESK", "BED", "BENCH", "FURNITURE"]):
+        return {
+            "archetype": arch,
+            "domain": "FURNITURE_PRODUCT",
+            "systems": {
+                "cushion_assemblies": {
+                    "strategy": "procedural_loft",
+                    "components": ["crowned_seat_cushions", "ergonomic_back_cushions", "perimeter_welt_piping", "side_bolsters"],
+                    "datums": ["seat_plane_z440mm", "cushion_crown_apex", "comfort_compression_depth"]
+                },
+                "frame_and_chassis": {
+                    "strategy": "subdivision_cage",
+                    "components": ["internal_hardwood_frame", "contoured_armrest_profiles", "inclined_backrest_shell", "seat_apron"],
+                    "datums": ["seat_incline_angle_104deg", "armrest_height_datum", "perimeter_clearance"]
+                },
+                "support_legs": {
+                    "strategy": "boolean_bevel",
+                    "components": ["tapered_turned_legs", "metal_sled_runners", "protective_foot_glides", "structural_corner_brackets"],
+                    "datums": ["ground_contact_plane", "mounting_socket_centers"]
+                },
+                "tactile_hardware": {
+                    "strategy": "bezier_curve",
+                    "components": ["drawer_pull_handles", "edge_beveled_surrounds", "fabric_tufting_buttons", "seam_stitches"],
+                    "datums": ["fillet_edge_radius", "ergonomic_touch_points"]
+                }
+            }
+        }
+
+    # Default Universal Fallback (Clean Spatial Decomposition, NOT Car Chassis)
+    return {
+        "archetype": arch,
+        "domain": "GENERAL_SPATIAL",
+        "systems": {
+            "primary_structure": {"strategy": "subdivision_cage", "components": ["core_body", "outer_hull"]},
+            "secondary_housings": {"strategy": "boolean_bevel", "components": ["apertures", "beveled_mounts"]},
+            "connective_trim": {"strategy": "bezier_curve", "components": ["perimeter_trims", "conduits"]},
+            "wear_and_finish": {"strategy": "sculpt_and_bake", "components": ["surface_breakup", "tactile_bevels"]}
+        }
+    }
+
+
+def crop_image_array(img: np.ndarray, box: list[float] | tuple[float, float, float, float]) -> np.ndarray:
+    """Crop image numpy array using normalized coordinates [ymin, xmin, ymax, xmax]."""
+    h, w = img.shape[:2]
+    ymin, xmin, ymax, xmax = box
+    r0 = max(0, min(h - 1, int(round(ymin * h))))
+    r1 = max(r0 + 1, min(h, int(round(ymax * h))))
+    c0 = max(0, min(w - 1, int(round(xmin * w))))
+    c1 = max(c0 + 1, min(w, int(round(xmax * w))))
+    return img[r0:r1, c0:c1].copy()
+
+
+def calculate_spline_normals_and_lengths(points: Any) -> tuple[np.ndarray, np.ndarray]:
+    """Calculate cumulative arc lengths and tangent vectors along 3D spline keypoints."""
+    pts = np.asarray(points, dtype=np.float32)
+    n = len(pts)
+    if n < 2:
+        return np.zeros(n, dtype=np.float32), np.zeros((n, 3), dtype=np.float32)
+
+    diffs = pts[1:] - pts[:-1]
+    seg_lens = np.linalg.norm(diffs, axis=1)
+    cum_lens = np.zeros(n, dtype=np.float32)
+    cum_lens[1:] = np.cumsum(seg_lens)
+
+    tangents = np.zeros((n, 3), dtype=np.float32)
+    tangents[0] = diffs[0] / max(1e-7, seg_lens[0])
+    tangents[-1] = diffs[-1] / max(1e-7, seg_lens[-1])
+    for i in range(1, n - 1):
+        v = pts[i + 1] - pts[i - 1]
+        norm_v = np.linalg.norm(v)
+        tangents[i] = v / max(1e-7, norm_v)
+
+    return cum_lens, tangents
+
+
+def create_bezier_tube(
+    name: str,
+    points: list,
+    radius: float = 0.02,
+    resolution: int = 12,
+    fill_caps: bool = True,
+    collection_name: str | None = None
+) -> dict:
+    """Create a non-destructive 3D curve tube (cables, pipes, trims)."""
+    if not HAS_BPY:
+        return {"status": "skipped_or_no_bpy", "name": name, "points": len(points)}
+
+    curve_data = bpy.data.curves.new(name=name, type='CURVE')
+    curve_data.dimensions = '3D'
+    curve_data.bevel_depth = float(radius)
+    curve_data.bevel_resolution = int(resolution)
+    curve_data.use_fill_caps = bool(fill_caps)
+
+    spline = curve_data.splines.new(type='BEZIER')
+    spline.bezier_points.add(len(points) - 1)
+
+    for i, pt in enumerate(points):
+        bp = spline.bezier_points[i]
+        bp.co = mathutils.Vector(pt)
+        bp.handle_left_type = 'AUTO'
+        bp.handle_right_type = 'AUTO'
+
+    obj = bpy.data.objects.new(name, curve_data)
+    col = bpy.data.collections.get(collection_name) if collection_name else bpy.context.scene.collection
+    col.objects.link(obj)
+    return {"status": "created", "name": obj.name, "points": len(points), "bevel_depth": radius}
+
+
+def setup_subdivision_cage(
+    obj: Any,
+    levels: int = 2,
+    render_levels: int = 2,
+    bevel_width: float = 0.008,
+    weighted_normal: bool = True
+) -> dict:
+    """Configure modern Aryan 3D / Isto Inc low-poly subdivision cage workflow."""
+    if not HAS_BPY or obj is None or obj.type != 'MESH':
+        return {"status": "skipped_or_no_bpy"}
+
+    for poly in obj.data.polygons:
+        poly.use_smooth = True
+
+    sub_mod = obj.modifiers.get("Cage_Subsurf")
+    if not sub_mod:
+        sub_mod = obj.modifiers.new("Cage_Subsurf", "SUBSURF")
+    sub_mod.levels = int(levels)
+    sub_mod.render_levels = int(render_levels)
+
+    if bevel_width > 0:
+        bev_mod = obj.modifiers.get("Cage_Bevel")
+        if not bev_mod:
+            bev_mod = obj.modifiers.new("Cage_Bevel", "BEVEL")
+        bev_mod.width = float(bevel_width)
+        bev_mod.segments = 2
+        bev_mod.limit_method = 'ANGLE'
+        bev_mod.angle_limit = math.radians(35.0)
+        bev_mod.harden_normals = True
+
+    if weighted_normal:
+        wn_mod = obj.modifiers.get("Cage_WeightedNormal")
+        if not wn_mod:
+            wn_mod = obj.modifiers.new("Cage_WeightedNormal", "WEIGHTED_NORMAL")
+        wn_mod.keep_sharp = True
+        wn_mod.weight = 50
+
+    return {"status": "configured", "object": obj.name, "modifiers": [m.name for m in obj.modifiers]}
+
+
+def crop_reference_region(
+    image_path: str,
+    crop_box: list[float] | None = None,
+    output_path: str | None = None,
+    region_name: str = "region"
+) -> dict:
+    """Extract named visual region crop from reference image to eliminate hallucination."""
+    import os
+    if not os.path.exists(image_path):
+        return {"error": f"Image file not found: {image_path}"}
+
+    REGION_PRESETS = {
+        "nose_grille": [0.35, 0.05, 0.70, 0.45],
+        "hood_windshield": [0.15, 0.15, 0.55, 0.60],
+        "front_wheel_arch": [0.45, 0.10, 0.85, 0.40],
+        "side_flank": [0.25, 0.20, 0.75, 0.85],
+        "rear_fascia": [0.20, 0.60, 0.80, 0.98]
+    }
+
+    box = crop_box or REGION_PRESETS.get(region_name.lower(), [0.0, 0.0, 1.0, 1.0])
+
+    if output_path is None:
+        import tempfile
+        output_path = os.path.join(tempfile.gettempdir(), f"crop_{region_name}.png")
+
+    try:
+        from PIL import Image
+        with Image.open(image_path) as im:
+            w, h = im.size
+            ymin, xmin, ymax, xmax = box
+            px_box = (int(xmin * w), int(ymin * h), int(xmax * w), int(ymax * h))
+            cropped = im.crop(px_box)
+            cropped.save(output_path)
+        return {
+            "status": "success",
+            "region": region_name,
+            "crop_path": output_path,
+            "box": box,
+            "source": image_path
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+
+
+
+

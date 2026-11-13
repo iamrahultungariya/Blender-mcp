@@ -31,3 +31,31 @@ def test_spatial_blueprint_generation():
     assert blueprint["domain"] == "FURNITURE_PRODUCT"
     assert "dimensions" in blueprint
     assert blueprint["anti_boxy_mandate"]["zero_unfilleted_primitives"] is True
+
+
+def test_component_tree_architecture_domain():
+    from blender_mcp.bmesh_toolkit import get_component_tree
+    tree = get_component_tree("HOUSE")
+    assert "structural_walls" in tree["systems"]
+    assert "roof_structure" in tree["systems"]
+    assert "fenestration" in tree["systems"]
+    assert "main_chassis" not in tree["systems"].get("primary_structure", {}).get("components", [])
+
+def test_component_tree_interior_domain():
+    from blender_mcp.bmesh_toolkit import get_component_tree
+    tree = get_component_tree("LIVING_ROOM")
+    assert "room_envelope" in tree["systems"]
+    assert "trim_carpentry" in tree["systems"]
+
+def test_component_tree_furniture_domain():
+    from blender_mcp.bmesh_toolkit import get_component_tree
+    tree = get_component_tree("SOFA")
+    assert "cushion_assemblies" in tree["systems"]
+    assert "frame_and_chassis" in tree["systems"]
+
+def test_component_tree_vehicle_domain_preserved():
+    from blender_mcp.bmesh_toolkit import get_component_tree
+    tree = get_component_tree("VEHICLE")
+    assert "body_shell" in tree["systems"]
+    assert "wheel_assembly" in tree["systems"]
+
