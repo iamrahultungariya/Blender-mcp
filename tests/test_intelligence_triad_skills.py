@@ -67,3 +67,18 @@ def test_geometry_engineering_v2_and_mcp_sync():
     assert template.exists(), "geometry-engineering-report template missing"
 
 
+def test_zero_unfilleted_primitives_law_codified():
+    geom_skill = (SKILLS_DIR / "blender-geometry-engineering" / "SKILL.md").read_text(encoding="utf-8")
+    assert "Zero Unfilleted Primitives Law" in geom_skill
+    assert "Anti-Boxy" in geom_skill or "ANTI-BOXY" in geom_skill
+    assert "0.20m" in geom_skill or "0.2m" in geom_skill  # Exterior wall minimum thickness
+    assert "cushion" in geom_skill.lower()
+
+def test_spatial_domains_in_preproduction_skill():
+    preprod_skill = (SKILLS_DIR / "blender-preproduction-intelligence" / "SKILL.md").read_text(encoding="utf-8")
+    assert "ARCHITECTURE" in preprod_skill
+    assert "INTERIOR_SPACES" in preprod_skill
+    assert "FURNITURE_PRODUCT" in preprod_skill
+
+
+

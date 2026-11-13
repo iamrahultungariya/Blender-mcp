@@ -547,6 +547,13 @@ A task is not complete because Blender returned without an exception.
 - Main surface/solid exists.
 - Required silhouette and dimensions checked.
 - No unapproved placeholder geometry remains.
+- **The Zero Unfilleted Primitives Law (Anti-Boxy Enforcement)**:
+  - *Zero Sharp Primitives*: Never output raw, unfilleted 90-degree boxes for furniture, architectural elements, or props. Razor-sharp mathematical $0\,\text{mm}$ edges do not exist in the physical universe.
+  - *Architectural Walls*: Minimum 0.20m exterior wall thickness (cavity/double-leaf standard) and 0.10m interior thickness; window/door rough openings must possess genuine reveal jambs and sills with $\ge 0.15\,\text{m}$ recess depth. Paper-thin 2D wall planes or flat boxes with painted windows are **REJECTED AT GATE G2**.
+  - *Upholstered Furniture & Cushions*: Every seat, cushion, sofa bolster, or upholstered headboard must implement organic double-parabolic crown lofting: $Z(u,v) = z0 + \text{crown} \cdot (1 - u^2)(1 - v^2)$ with $\text{crown} \ge 0.03\,\text{m}$ and rounded perimeter skirts. Flat slab cushions are **REJECTED AT GATE G2**.
+  - *Wood & Hard Edges*: All casework, tables, and cabinets require edge fillets/bevels ($2\text{--}6\,\text{mm}$ roundovers/chamfers). Chair legs must exhibit tapers and floor glides.
+  - *Room Intersections*: Floor-to-wall junctions must incorporate profiled baseboards ($\ge 0.10\,\text{m}$ height), and wall-to-ceiling junctions must incorporate crown moldings or lighting cove reveals.
+
 
 **Gate G3 — Topology and interfaces**
 - Boundary loops and patch joins inspected.

@@ -126,6 +126,18 @@ Extract explicit requirements into these groups:
 - Required quantity and relationships between objects.
 - Explicit exclusions (what must not appear).
 
+#### 3.1.1 Universal Spatial Domain Classification
+Map the asset into one of 4 core spatial domains:
+1. **`ARCHITECTURE`** (Villas, Houses, Buildings, Facades, Cabins):
+   - Mandatory datums: Exterior wall thickness $\ge 0.20\,\text{m}$ (never paper-thin 2D boxes), interior wall thickness $\ge 0.10\,\text{m}$, clear floor-to-ceiling height $2.80\text{--}3.50\,\text{m}$, window rough opening reveals $\ge 0.15\,\text{m}$ deep with sills and lintels, roof overhang eaves $0.40\text{--}0.80\,\text{m}$.
+2. **`INTERIOR_SPACES`** (Living Rooms, Bedrooms, Kitchens, Hallways):
+   - Mandatory datums: Profiled baseboards ($\ge 0.10\,\text{m}$ height at floor-wall junction), crown moldings or LED lighting coves at ceiling junctions, main circulation walkways $\ge 0.90\,\text{m}$, countertop work surfaces at $0.90\,\text{m}$.
+3. **`FURNITURE_PRODUCT`** (Sofas, Armchairs, Dining Tables, Chairs, Casegoods):
+   - Mandatory datums: Organic double-parabolic crowned cushion lofts ($Z(u,v) = z0 + \text{crown} \cdot (1 - u^2)(1 - v^2)$ with $\text{crown} \ge 0.03\,\text{m}$, zero flat slabs), edge fillets ($2\text{--}6\,\text{mm}$ roundovers/bevels on tables and cases), ergonomic seat height $0.42\text{--}0.46\,\text{m}$, reclined backrests $100^\circ\text{--}105^\circ$, and tapered legs.
+4. **`VEHICLE`** (Sports Cars, Vans, Sedans, Commercial Trucks):
+   - Retains aerodynamic curvature splines, wheelbase, ground clearance, wheel arch cuts, and greenhouse tuck.
+
+
 ### 3.2 Intended use
 
 Identify the main use:

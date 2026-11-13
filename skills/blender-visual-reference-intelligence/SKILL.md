@@ -209,6 +209,11 @@ Analyse the object in layers:
 3. **Tertiary forms:** openings, seams, recesses, lips, bevels, vents, handles, trim.
 4. **Micro details:** fasteners, badges, small grilles, textures, tiny hardware.
 
+#### Multi-Domain Visual Decomposition & Anti-Boxy Screening
+- **Architecture & Buildings**: Deconstruct references into foundation plinth $\to$ exterior cavity walls ($\ge 0.20\,\text{m}$ thickness) $\to$ window/door openings with visible reveal jambs and sloped sills ($\ge 0.15\,\text{m}$ depth) $\to$ architectural casing/trim $\to$ roof overhang eaves. Identify wall depth and shadow lines: flat painted window planes with zero reveals indicate invalid cartoon or low-effort geometry.
+- **Furniture & Interiors**: Deconstruct references into frame/legs (tapered profiles, foot glides) $\to$ support structure $\to$ crowned cushion volumes (convex double-parabolic puff with seam piping, strictly screening out flat box cushions) $\to$ edge fillets ($2\text{--}6\,\text{mm}$ roundovers). Identify floor-to-wall baseboards and ceiling crown trims in room interior photos.
+
+
 For each major view describe:
 - Outer silhouette.
 - Major contour changes.
