@@ -44,3 +44,26 @@ def test_visual_reference_intelligence_skill_exists():
     assert playbook.exists(), "visual reference playbook missing"
     assert template.exists(), "visual-reference-analysis-report template missing"
 
+
+def test_geometry_engineering_v2_and_mcp_sync():
+    """Verify Skill 03 (blender-geometry-engineering) is v2 and synchronized with latest FastMCP tools."""
+    skill_dir = SKILLS_DIR / "blender-geometry-engineering"
+    skill_file = skill_dir / "SKILL.md"
+    assert skill_file.exists(), "Skill 03 SKILL.md missing"
+
+    content = skill_file.read_text(encoding="utf-8")
+    assert "name: blender-geometry-engineering" in content
+    assert "Gate G0" in content
+    assert "Gate G6" in content
+    # Verify latest engine synchronization additions
+    assert "apply_uv_unwrap" in content, "Skill 03 must document apply_uv_unwrap tool"
+    assert "Smooth by Angle" in content or "Blender 5" in content, "Skill 03 must document Blender 5.3+ auto-smooth rules"
+
+    # Verify supporting references and templates
+    playbook = skill_dir / "references" / "geometry-engineering-playbook.md"
+    template = skill_dir / "templates" / "geometry-engineering-report.md"
+
+    assert playbook.exists(), "geometry engineering playbook missing"
+    assert template.exists(), "geometry-engineering-report template missing"
+
+
