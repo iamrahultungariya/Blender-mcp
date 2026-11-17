@@ -18,3 +18,6 @@ from .server import BlenderConnection, get_blender_connection
 from . import bmesh_toolkit
 from . import vehicle_thinking
 from . import materials_preset
+from . import mesh_auditor
+from . import reference_analyzer
+from . import pipeline_gates

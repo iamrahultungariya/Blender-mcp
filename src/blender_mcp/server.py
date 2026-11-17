@@ -356,7 +356,7 @@ scale: use the reported world_bounding_box to size them and put them on the grou
 
 # Create the MCP server with lifespan support
 mcp = FastMCP(
-    "MCP for Blender",
+    "Rahul 3D Engine",
     lifespan=server_lifespan,
     instructions=SERVER_INSTRUCTIONS,
 )
@@ -2870,6 +2870,1196 @@ async def create_profile_sweep_molding(
         "depth": depth,
         "name": name,
         "collection_name": collection_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase 1: Scene Checkpoint & Safety Engine (System 07)
+# ==============================================================================
+
+@mcp.tool()
+async def create_scene_checkpoint(
+    label: str,
+    description: str = "",
+    checkpoint_type: str = "MANUAL"
+) -> str:
+    """Save an instantaneous, recoverable disk-based .blend copy snapshot with metadata.
+    
+    Use this BEFORE executing destructive or high-risk operations (e.g. booleans, remeshing,
+    large geometry mutations).
+    
+    Parameters:
+    - label: Human-readable tag (e.g., 'pre_boolean_cutout', 'blockout_complete')
+    - description: Optional context describing current state
+    - checkpoint_type: MANUAL or AUTO
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("create_scene_checkpoint", {
+        "label": label,
+        "description": description,
+        "checkpoint_type": checkpoint_type,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def restore_scene_checkpoint(
+    label_or_id: str,
+    restore_mode: str = "RELOAD"
+) -> str:
+    """Restore Blender scene state to a previously saved checkpoint snapshot.
+    
+    WARNING: DESTRUCTIVE operation. Replaces the current scene with the checkpoint file.
+    
+    Parameters:
+    - label_or_id: Checkpoint ID (e.g., 'cp_1731760000_a1b2c3') or label
+    - restore_mode: RELOAD
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("restore_scene_checkpoint", {
+        "label_or_id": label_or_id,
+        "restore_mode": restore_mode,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def list_scene_checkpoints() -> str:
+    """List all available scene snapshots ordered chronologically with metadata.
+    
+    Returns checkpoint ID, timestamp, label, object count, and file paths.
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("list_scene_checkpoints")
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def delete_scene_checkpoint(label_or_id: str) -> str:
+    """Permanently delete a scene checkpoint and free associated disk storage.
+    
+    Parameters:
+    - label_or_id: Checkpoint ID or exact label
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("delete_scene_checkpoint", {
+        "label_or_id": label_or_id,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase 2: PBR Material & Procedural Shader Engine (System 01)
+# ==============================================================================
+
+@mcp.tool()
+async def assign_pbr_material(
+    object_name: str,
+    material_name: str,
+    base_color: list[float] = [0.8, 0.8, 0.8, 1.0],
+    metallic: float = 0.0,
+    roughness: float = 0.5,
+    alpha: float = 1.0,
+    emission_color: list[float] = [0.0, 0.0, 0.0, 1.0],
+    emission_strength: float = 0.0,
+    normal_strength: float = 1.0,
+    assign_mode: str = "ACTIVE_OR_NEW"
+) -> str:
+    """Assign or update a calibrated PBR Principled BSDF material on a target object.
+    
+    Handles version-specific socket naming differences across Blender 3.x, 4.x, and 5.x LTS.
+    
+    Parameters:
+    - object_name: Target mesh object
+    - material_name: Name of material to create or reuse
+    - base_color: RGBA color values [0.0 - 1.0]
+    - metallic: Metallic level [0.0 dielectric to 1.0 pure metal]
+    - roughness: Surface microfacet roughness [0.0 mirror to 1.0 matte]
+    - alpha: Material opacity [1.0 opaque]
+    - emission_color: RGBA emission tint
+    - emission_strength: Emissive light output in Watts/m^2
+    - assign_mode: 'ACTIVE_OR_NEW' (default) or 'REPLACE_ALL'
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("assign_pbr_material", {
+        "object_name": object_name,
+        "material_name": material_name,
+        "base_color": base_color,
+        "metallic": metallic,
+        "roughness": roughness,
+        "alpha": alpha,
+        "emission_color": emission_color,
+        "emission_strength": emission_strength,
+        "normal_strength": normal_strength,
+        "assign_mode": assign_mode,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def inspect_material_nodes(
+    material_name: str,
+    include_links: bool = True,
+    include_node_properties: bool = True
+) -> str:
+    """Inspect structured shader node graph of a material without raw text dumps.
+    
+    Returns node types, input sockets, connected links, and output verification.
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("inspect_material_nodes", {
+        "material_name": material_name,
+        "include_links": include_links,
+        "include_node_properties": include_node_properties,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_procedural_shader(
+    material_name: str,
+    preset: str = "wood",
+    object_name: str = "",
+    scale: float = 1.0,
+    color_tint: list[float] = None,
+    roughness_multiplier: float = 1.0
+) -> str:
+    """Generate production-ready physically calibrated procedural shader network.
+    
+    Supported Presets (15):
+    - wood: Natural wavy grain with micro-bump and natural color ramp
+    - brushed_metal: Stretched directional noise with anisotropic scratches
+    - polished_metal: Mirror chrome finish with zero roughness
+    - concrete: Layered aggregate voronoi and fine mortar bump
+    - marble: Distorted wave veining with subtle subsurface scatter
+    - leather: Organic voronoi cell boundaries with soft specular sheen
+    - fabric_weave: Micro crosshatch pattern with soft velvet sheen
+    - plastic: Clean dielectric with crisp specular highlight
+    - ceramic: High-gloss clearcoat glaze over porcelain base
+    - rubber: High roughness, low specular, vulcanized appearance
+    - painted_wall: Subtle plaster orange-peel micro-stipple bump
+    - aged_wood: Darkened weathered grain ridges and cracks
+    - rusted_metal: Procedural oxidation mask blending steel and rough rust
+    - stone: Multi-octave natural mineral noise displacement
+    - glass: Realistic optical transmission (IOR 1.52) with near-zero roughness
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("create_procedural_shader", {
+        "material_name": material_name,
+        "preset": preset,
+        "object_name": object_name or None,
+        "scale": scale,
+        "color_tint": color_tint,
+        "roughness_multiplier": roughness_multiplier,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def modify_material_property(
+    material_name: str,
+    property_name: str,
+    value: Any
+) -> str:
+    """Safely tweak a single shader property (e.g. 'roughness', 'metallic', 'base_color')
+    without reconstructing or disturbing the shader node tree.
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("modify_material_property", {
+        "material_name": material_name,
+        "property_name": property_name,
+        "value": value,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def validate_material_setup(material_name: str) -> str:
+    """Run diagnostic audit on a material's shader tree.
+    
+    Checks for missing Material Output nodes, disconnected BSDF sockets, and invalid links.
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("validate_material_setup", {
+        "material_name": material_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase 3: Cinematic Studio Lighting & HDRI Engine (System 02)
+# ==============================================================================
+
+@mcp.tool()
+async def setup_studio_lighting(
+    preset: str = "three_point",
+    target_object: str = "",
+    energy_multiplier: float = 1.0,
+    color_temperature: float = 5500.0,
+    shadow_quality: str = "HIGH",
+    world_strength: float = 0.1,
+    collection_name: str = "Lighting_Studio"
+) -> str:
+    """Setup professional, physically-calibrated studio lighting rig.
+    
+    Automatically evaluates target object bounding dimensions to scale light
+    distances, softbox areas, and wattages.
+    
+    Supported Presets (10):
+    - three_point: Classic Key (45 deg), softer Fill (-45 deg), and Rim backlight
+    - dramatic_rim: Dual intense rear edge kickers with minimal frontal fill
+    - soft_interior: Large overhead diffuse ceiling softbox with warm cove ambient
+    - product_clean: High-key 4-point cyclorama studio lighting
+    - cinematic: Hollywood style golden warm key (3200K) + deep cool teal fill (7500K)
+    - architectural: Angled sunlight vector with ambient skylight dome
+    - horror_atmosphere: Low harsh uplight with deep pitch shadows
+    - daylight: Direct high-noon sun (5000W) with clear sky
+    - night_scene: Cool deep-blue moonlight with warm localized accent point
+    - automotive_studio: Elongated overhead and flanking strip softboxes for reflections
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("setup_studio_lighting", {
+        "preset": preset,
+        "target_object": target_object or None,
+        "energy_multiplier": energy_multiplier,
+        "color_temperature": color_temperature,
+        "shadow_quality": shadow_quality,
+        "world_strength": world_strength,
+        "collection_name": collection_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def setup_environment_hdri(
+    hdri_path_or_preset: str = "studio",
+    strength: float = 1.0,
+    rotation: float = 0.0,
+    background_visibility: bool = True
+) -> str:
+    """Configure World shader node tree with HDRI image texture or studio ambient sky.
+    
+    Parameters:
+    - hdri_path_or_preset: Filepath to .hdr/.exr or 'studio'
+    - strength: Background emission strength
+    - rotation: Z-axis rotation in degrees [0 - 360]
+    - background_visibility: Whether environment is directly visible to camera
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("setup_environment_hdri", {
+        "hdri_path_or_preset": hdri_path_or_preset,
+        "strength": strength,
+        "rotation": rotation,
+        "background_visibility": background_visibility,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def inspect_lighting_setup() -> str:
+    """Return structured inventory of all scene lights and world environment settings.
+    
+    Returns light names, types (SUN/AREA/SPOT/POINT), wattages, colors, locations, and collections.
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("inspect_lighting_setup")
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def adjust_lighting_for_object(
+    target_object: str,
+    key_fill_ratio: float = 2.5
+) -> str:
+    """Dynamically re-target and adjust existing studio lights to frame an object."""
+    blender = get_blender_connection()
+    res = blender.send_command("adjust_lighting_for_object", {
+        "target_object": target_object,
+        "key_fill_ratio": key_fill_ratio,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase 4: Camera Framing, Composition & Depth of Field Engine (System 03)
+# ==============================================================================
+
+@mcp.tool()
+async def frame_camera_to_object(
+    object_name: str,
+    lens_mm: float = 50.0,
+    angle: str = "three_quarters",
+    margin: float = 1.15,
+    camera_name: str = "Camera_Main",
+    composition: str = "center"
+) -> str:
+    """Calculate object bounding dimensions and position camera with sensor-accurate framing.
+    
+    Supported Angles:
+    front, back, left, right, top, bottom, three_quarters, isometric, hero, low_angle, high_angle.
+    
+    Supported Compositions:
+    center, rule_of_thirds, cinematic, product_hero, architectural.
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("frame_camera_to_object", {
+        "object_name": object_name,
+        "lens_mm": lens_mm,
+        "angle": angle,
+        "margin": margin,
+        "camera_name": camera_name,
+        "composition": composition,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def setup_camera_dof(
+    target_object: str = "",
+    f_stop: float = 2.8,
+    focus_distance: float = 0.0,
+    enabled: bool = True,
+    camera_name: str = "Camera_Main"
+) -> str:
+    """Configure optical Depth of Field (bokeh blur) and focal tracking on camera."""
+    blender = get_blender_connection()
+    res = blender.send_command("setup_camera_dof", {
+        "target_object": target_object or None,
+        "f_stop": f_stop,
+        "focus_distance": focus_distance,
+        "enabled": enabled,
+        "camera_name": camera_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_turntable_camera(
+    target_object: str,
+    frames: int = 120,
+    height: float = 1.5,
+    radius: float = 0.0,
+    start_frame: int = 1,
+    end_frame: int = 120,
+    camera_name: str = "Camera_Turntable"
+) -> str:
+    """Animate a 360-degree circular orbit camera path around target object without roll."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_turntable_camera", {
+        "target_object": target_object,
+        "frames": frames,
+        "height": height,
+        "radius": radius,
+        "start_frame": start_frame,
+        "end_frame": end_frame,
+        "camera_name": camera_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def inspect_camera_setup(camera_name: str = "Camera_Main") -> str:
+    """Inspect structured camera settings, focal length, sensor width, clipping, and DoF."""
+    blender = get_blender_connection()
+    res = blender.send_command("inspect_camera_setup", {
+        "camera_name": camera_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase 5: Automated Mesh Repair, Remeshing & Decimation (System 04)
+# ==============================================================================
+
+@mcp.tool()
+async def repair_mesh_topology(
+    object_name: str,
+    remove_doubles: bool = True,
+    remove_loose: bool = True,
+    fix_normals: bool = True,
+    dissolve_degenerate: bool = True,
+    merge_distance: float = 0.0001
+) -> str:
+    """Repair topology defects (remove duplicate vertices, delete loose geometry, fix normals)."""
+    blender = get_blender_connection()
+    res = blender.send_command("repair_mesh_topology", {
+        "object_name": object_name,
+        "remove_doubles": remove_doubles,
+        "remove_loose": remove_loose,
+        "fix_normals": fix_normals,
+        "dissolve_degenerate": dissolve_degenerate,
+        "merge_distance": merge_distance,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def decimate_mesh(
+    object_name: str,
+    target_ratio: float = 0.5,
+    preserve_uvs: bool = True,
+    preserve_symmetry: bool = False,
+    triangulate: bool = False,
+    apply_modifier: bool = False
+) -> str:
+    """Reduce polygon count with controlled decimation ratio and UV preservation."""
+    blender = get_blender_connection()
+    res = blender.send_command("decimate_mesh", {
+        "object_name": object_name,
+        "target_ratio": target_ratio,
+        "preserve_uvs": preserve_uvs,
+        "preserve_symmetry": preserve_symmetry,
+        "triangulate": triangulate,
+        "apply_modifier": apply_modifier,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def quad_remesh(
+    object_name: str,
+    target_quads: int = 5000,
+    preserve_symmetry: bool = False,
+    preserve_sharp: bool = True,
+    preserve_boundary: bool = True,
+    adaptive_size: int = 50
+) -> str:
+    """Execute QuadriFlow remeshing to generate uniform quad-dominant mesh topology.
+    
+    Automatically creates a backup datablock prior to invoking the operator.
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("quad_remesh", {
+        "object_name": object_name,
+        "target_quads": target_quads,
+        "preserve_symmetry": preserve_symmetry,
+        "preserve_sharp": preserve_sharp,
+        "preserve_boundary": preserve_boundary,
+        "adaptive_size": adaptive_size,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def generate_lod_chain(
+    object_name: str,
+    lod_ratios: list[float] = [1.0, 0.5, 0.25, 0.1],
+    collection_name: str = "LODs"
+) -> str:
+    """Generate sequential LOD chain (LOD0 100%, LOD1 50%, LOD2 25%, LOD3 10%)."""
+    blender = get_blender_connection()
+    res = blender.send_command("generate_lod_chain", {
+        "object_name": object_name,
+        "lod_ratios": lod_ratios,
+        "collection_name": collection_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase 6: Cloth Simulation & Surface Placement (Systems 05 & 06)
+# ==============================================================================
+
+@mcp.tool()
+async def setup_cloth_physics(
+    cloth_object: str,
+    preset: str = "cotton",
+    mass: float = None,
+    tension: float = None,
+    compression: float = None,
+    shear: float = None,
+    bending: float = None,
+    damping: float = None,
+    pressure: float = None,
+    pressure_factor: float = None,
+    gravity_scale: float = None,
+    shrink_factor: float = None,
+    quality_steps: int = 5
+) -> str:
+    """Configure physical cloth simulation parameters on target mesh (cotton, silk, denim, wool, leather, pressure)."""
+    blender = get_blender_connection()
+    res = blender.send_command("setup_cloth_physics", {
+        "cloth_object": cloth_object,
+        "preset": preset,
+        "mass": mass,
+        "tension": tension,
+        "compression": compression,
+        "shear": shear,
+        "bending": bending,
+        "damping": damping,
+        "pressure": pressure,
+        "pressure_factor": pressure_factor,
+        "gravity_scale": gravity_scale,
+        "shrink_factor": shrink_factor,
+        "quality_steps": quality_steps,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def bake_cloth_drop(
+    cloth_object: str,
+    collision_objects: list[str] = [],
+    steps: int = 40,
+    pin_boundary: bool = False,
+    apply_result: bool = True
+) -> str:
+    """Simulate cloth drop onto collision objects headlessly and freeze result to static mesh."""
+    blender = get_blender_connection()
+    res = blender.send_command("bake_cloth_drop", {
+        "cloth_object": cloth_object,
+        "collision_objects": collision_objects,
+        "steps": steps,
+        "pin_boundary": pin_boundary,
+        "apply_result": apply_result,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def inspect_cloth_simulation(cloth_object: str) -> str:
+    """Inspect cloth physics modifier state and parameters."""
+    blender = get_blender_connection()
+    res = blender.send_command("inspect_cloth_simulation", {
+        "cloth_object": cloth_object,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def snap_to_surface(
+    object_name: str,
+    target_surface_name: str,
+    offset: float = 0.0,
+    alignment_mode: str = "BOTTOM_TO_SURFACE",
+    ray_direction: list[float] = [0.0, 0.0, -1.0]
+) -> str:
+    """Snap an object so its lowest bound rests flush on target surface using raycasting."""
+    blender = get_blender_connection()
+    res = blender.send_command("snap_to_surface", {
+        "object_name": object_name,
+        "target_surface_name": target_surface_name,
+        "offset": offset,
+        "alignment_mode": alignment_mode,
+        "ray_direction": ray_direction,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def align_object_to_surface(
+    object_name: str,
+    target_surface_name: str
+) -> str:
+    """Orient object so its local +Z axis aligns with target surface normal."""
+    blender = get_blender_connection()
+    res = blender.send_command("align_object_to_surface", {
+        "object_name": object_name,
+        "target_surface_name": target_surface_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def scatter_instances(
+    collection_name: str,
+    target_surface: str,
+    count: int = 20,
+    random_rotation: bool = True,
+    random_scale: list[float] = [0.8, 1.2],
+    min_distance: float = 0.1,
+    distribution: str = "random",
+    seed: int = 42
+) -> str:
+    """Scatter memory-efficient linked instances of prototype collection across surface."""
+    blender = get_blender_connection()
+    res = blender.send_command("scatter_instances", {
+        "collection_name": collection_name,
+        "target_surface": target_surface,
+        "count": count,
+        "random_rotation": random_rotation,
+        "random_scale": random_scale,
+        "min_distance": min_distance,
+        "distribution": distribution,
+        "seed": seed,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def inspect_scatter_result(target_surface: str) -> str:
+    """Inspect count of scattered instances associated with target surface."""
+    blender = get_blender_connection()
+    res = blender.send_command("inspect_scatter_result", {
+        "target_surface": target_surface,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase 7: Modifier Stack Automation & Mechanical Rigging (Systems 08 & 09)
+# ==============================================================================
+
+@mcp.tool()
+async def apply_modifier_stack(
+    object_name: str,
+    stack: list[dict],
+    apply_immediately: bool = False
+) -> str:
+    """Configure a declarative stack of modifiers on a mesh object.
+    
+    Supported: BEVEL, SUBSURF, SOLIDIFY, ARRAY, MIRROR, DECIMATE, REMESH, WEIGHTED_NORMAL, etc.
+    """
+    blender = get_blender_connection()
+    res = blender.send_command("apply_modifier_stack", {
+        "object_name": object_name,
+        "stack": stack,
+        "apply_immediately": apply_immediately,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def inspect_modifier_stack(object_name: str) -> str:
+    """Inspect active modifier stack configuration and settings on an object."""
+    blender = get_blender_connection()
+    res = blender.send_command("inspect_modifier_stack", {
+        "object_name": object_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def freeze_modifiers(
+    object_name: str,
+    modifier_names: list[str] = None,
+    create_backup: bool = True
+) -> str:
+    """Freeze (apply) modifier stack into final mesh geometry destructively."""
+    blender = get_blender_connection()
+    res = blender.send_command("freeze_modifiers", {
+        "object_name": object_name,
+        "modifier_names": modifier_names,
+        "create_backup": create_backup,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def setup_vehicle_rig(
+    chassis_obj: str,
+    wheel_objs: list[str],
+    steering_wheels: list[str] = [],
+    suspension_enabled: bool = False,
+    rig_name: str = "Vehicle_Rig"
+) -> str:
+    """Build complete vehicle empty controller hierarchy (Root, Chassis, Steer, Wheels)."""
+    blender = get_blender_connection()
+    res = blender.send_command("setup_vehicle_rig", {
+        "chassis_obj": chassis_obj,
+        "wheel_objs": wheel_objs,
+        "steering_wheels": steering_wheels,
+        "suspension_enabled": suspension_enabled,
+        "rig_name": rig_name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def setup_hinge_constraint(
+    door_obj: str,
+    frame_obj: str = "",
+    axis: str = "Z",
+    limits: list[float] = [-90.0, 0.0],
+    hinge_position: list[float] = None,
+    constraint_type: str = "LIMIT_ROTATION"
+) -> str:
+    """Configure architectural or furniture door/drawer hinge pivot and rotation limits."""
+    blender = get_blender_connection()
+    res = blender.send_command("setup_hinge_constraint", {
+        "door_obj": door_obj,
+        "frame_obj": frame_obj or None,
+        "axis": axis,
+        "limits": limits,
+        "hinge_position": hinge_position,
+        "constraint_type": constraint_type,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def setup_mechanical_pivot(
+    object_name: str,
+    pivot_location: list[float],
+    parent_name: str = ""
+) -> str:
+    """Create a designated mechanical rotation/translation pivot controller empty."""
+    blender = get_blender_connection()
+    res = blender.send_command("setup_mechanical_pivot", {
+        "object_name": object_name,
+        "pivot_location": pivot_location,
+        "parent_name": parent_name or None,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def inspect_rig_hierarchy(root_obj: str) -> str:
+    """Traverse and return hierarchical tree of rigged objects, constraints, and controllers."""
+    blender = get_blender_connection()
+    res = blender.send_command("inspect_rig_hierarchy", {
+        "root_obj": root_obj,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase V3.1: Soft Goods & Hard-Surface Edge Conditioning Tools
+# ==============================================================================
+
+@mcp.tool()
+async def apply_edge_conditioning(
+    object_name: str,
+    mode: str = "bevel_weight",
+    angle_threshold_deg: float = 30.0,
+    bevel_weight: float = 1.0,
+    crease_weight: float = 0.0,
+    bevel_width: float = 0.008,
+    bevel_segments: int = 2,
+    add_weighted_normal: bool = True,
+    keep_sharp: bool = True
+) -> str:
+    """Apply AAA edge conditioning (bevel weights, creases, and weighted normal modifier) for razor-sharp chamfers."""
+    blender = get_blender_connection()
+    res = blender.send_command("apply_edge_conditioning", {
+        "object_name": object_name,
+        "mode": mode,
+        "angle_threshold_deg": angle_threshold_deg,
+        "bevel_weight": bevel_weight,
+        "crease_weight": crease_weight,
+        "bevel_width": bevel_width,
+        "bevel_segments": bevel_segments,
+        "add_weighted_normal": add_weighted_normal,
+        "keep_sharp": keep_sharp,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_pillow(
+    shape: str = "classic",
+    width: float = 0.5,
+    length: float = 0.5,
+    thickness: float = 0.18,
+    puffiness: float = 1.0,
+    seam_piping: bool = True,
+    tufting: bool = False,
+    use_physics: bool = False,
+    simulation_mode: str = "hybrid",
+    name: str = "Pillow"
+) -> str:
+    """Generate organic puffed pillow with seam piping, corner pinches, and optional tufting (classic, diamond, bolster, square)."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_pillow", {
+        "shape": shape,
+        "width": width,
+        "length": length,
+        "thickness": thickness,
+        "puffiness": puffiness,
+        "seam_piping": seam_piping,
+        "tufting": tufting,
+        "use_physics": use_physics,
+        "simulation_mode": simulation_mode,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_curtains(
+    width: float = 1.5,
+    height: float = 2.4,
+    pleat_count: int = 8,
+    bunch_factor: float = 0.6,
+    rod_offset: float = 0.05,
+    simulation_mode: str = "parametric",
+    name: str = "Curtains"
+) -> str:
+    """Generate realistic pleated drapery panel with S-wave accordion pleats and top pin group."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_curtains", {
+        "width": width,
+        "height": height,
+        "pleat_count": pleat_count,
+        "bunch_factor": bunch_factor,
+        "rod_offset": rod_offset,
+        "simulation_mode": simulation_mode,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_duvet(
+    bed_width: float = 1.8,
+    bed_length: float = 2.0,
+    overhang: float = 0.25,
+    thickness: float = 0.04,
+    baffle_box: bool = True,
+    simulation_mode: str = "parametric",
+    name: str = "Duvet"
+) -> str:
+    """Generate realistic baffle-box quilted duvet with smooth rounded drape overhang."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_duvet", {
+        "bed_width": bed_width,
+        "bed_length": bed_length,
+        "overhang": overhang,
+        "thickness": thickness,
+        "baffle_box": baffle_box,
+        "simulation_mode": simulation_mode,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_blanket(
+    width: float = 1.4,
+    length: float = 1.8,
+    drape_angle: float = 15.0,
+    thickness: float = 0.015,
+    fold_back: float = 0.2,
+    simulation_mode: str = "parametric",
+    name: str = "Blanket"
+) -> str:
+    """Generate folded or draped accent throw blanket with hem edges."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_blanket", {
+        "width": width,
+        "length": length,
+        "drape_angle": drape_angle,
+        "thickness": thickness,
+        "fold_back": fold_back,
+        "simulation_mode": simulation_mode,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_tufted_surface(
+    width: float = 1.0,
+    height: float = 1.0,
+    rows: int = 4,
+    cols: int = 4,
+    button_depth: float = 0.03,
+    diamond_pattern: bool = True,
+    name: str = "Tufted_Surface"
+) -> str:
+    """Generate chesterfield diamond tufted surface with button depressions and diagonal fold creases."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_tufted_surface", {
+        "width": width,
+        "height": height,
+        "rows": rows,
+        "cols": cols,
+        "button_depth": button_depth,
+        "diamond_pattern": diamond_pattern,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase V3.2: Furniture & Architectural Detail Engine Tools
+# ==============================================================================
+
+@mcp.tool()
+async def create_bed(
+    style: str = "modern",
+    dimensions: list[float] = [2.0, 1.8, 0.45],
+    headboard_style: str = "tufted",
+    include_mattress: bool = True,
+    include_pillows: bool = True,
+    include_duvet: bool = True,
+    name: str = "Bed"
+) -> str:
+    """Generate high-fidelity AAA bed assembly with frame, headboard, mattress, pillows, and duvet."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_bed", {
+        "style": style,
+        "dimensions": dimensions,
+        "headboard_style": headboard_style,
+        "include_mattress": include_mattress,
+        "include_pillows": include_pillows,
+        "include_duvet": include_duvet,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_sofa(
+    style: str = "modern",
+    seats: int = 3,
+    armrest_style: str = "rounded",
+    cushion_puffiness: float = 0.85,
+    leg_style: str = "tapered_metal",
+    name: str = "Sofa"
+) -> str:
+    """Generate realistic modular sofa assembly with modular puffed cloth cushions (Tutorial 4)."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_sofa", {
+        "style": style,
+        "seats": seats,
+        "armrest_style": armrest_style,
+        "cushion_puffiness": cushion_puffiness,
+        "leg_style": leg_style,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_chair(
+    style: str = "dining",
+    seat_height: float = 0.45,
+    backrest_style: str = "curved",
+    leg_style: str = "tapered",
+    name: str = "Chair"
+) -> str:
+    """Generate ergonomic chair assembly with contoured seat, backrest, and legs."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_chair", {
+        "style": style,
+        "seat_height": seat_height,
+        "backrest_style": backrest_style,
+        "leg_style": leg_style,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_table(
+    style: str = "dining",
+    length: float = 1.8,
+    width: float = 0.9,
+    height: float = 0.76,
+    tabletop_thickness: float = 0.04,
+    leg_style: str = "angled_post",
+    name: str = "Table"
+) -> str:
+    """Generate AAA architectural table assembly with chamfered top, structural apron, and legs."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_table", {
+        "style": style,
+        "length": length,
+        "width": width,
+        "height": height,
+        "tabletop_thickness": tabletop_thickness,
+        "leg_style": leg_style,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_wardrobe(
+    width: float = 1.4,
+    height: float = 2.2,
+    depth: float = 0.6,
+    door_count: int = 2,
+    has_drawers: bool = True,
+    handle_style: str = "bar",
+    name: str = "Wardrobe"
+) -> str:
+    """Generate architectural wardrobe assembly with carcass, doors, drawers, and handles."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_wardrobe", {
+        "width": width,
+        "height": height,
+        "depth": depth,
+        "door_count": door_count,
+        "has_drawers": has_drawers,
+        "handle_style": handle_style,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_door_assembly(
+    width: float = 0.9,
+    height: float = 2.1,
+    frame_depth: float = 0.15,
+    panel_style: str = "six_panel",
+    handle_type: str = "lever",
+    name: str = "Door_Assembly"
+) -> str:
+    """Generate architectural door assembly with jamb frame, architrave casing molding, leaf, and hardware."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_door_assembly", {
+        "width": width,
+        "height": height,
+        "frame_depth": frame_depth,
+        "panel_style": panel_style,
+        "handle_type": handle_type,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase V3.3: Nature & Organic Environment Engine & Assembly Physics
+# ==============================================================================
+
+@mcp.tool()
+async def simulate_cloth_assembly(
+    assembly_root: str,
+    target_obstacles: list[str] = [],
+    steps: int = 50,
+    apply_result: bool = False
+) -> str:
+    """Execute multi-cloth physical settling simulation across an assembly onto obstacle collision surfaces."""
+    blender = get_blender_connection()
+    res = blender.send_command("simulate_cloth_assembly", {
+        "assembly_root": assembly_root,
+        "target_obstacles": target_obstacles,
+        "steps": steps,
+        "apply_result": apply_result,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_grass_blade_cluster(
+    blade_count: int = 14,
+    height: float = 0.35,
+    curve_intensity: float = 0.8,
+    dead_blade_ratio: float = 0.25,
+    name: str = "Grass_Cluster"
+) -> str:
+    """Generate realistic clump of curved grass blades and dead stalks with translucent foliage materials."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_grass_blade_cluster", {
+        "blade_count": blade_count,
+        "height": height,
+        "curve_intensity": curve_intensity,
+        "dead_blade_ratio": dead_blade_ratio,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_grass_field(
+    target_ground: str,
+    cluster_collection: str = None,
+    density: float = 150.0,
+    patchiness: float = 0.7,
+    scale_range: list[float] = [0.7, 1.3],
+    seed: int = 42
+) -> str:
+    """Configure procedural Geometry Nodes grass field scattering with Musgrave density mask (Tutorial 1)."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_grass_field", {
+        "target_ground": target_ground,
+        "cluster_collection": cluster_collection,
+        "density": density,
+        "patchiness": patchiness,
+        "scale_range": scale_range,
+        "seed": seed,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def create_terrain_ground(
+    width: float = 10.0,
+    length: float = 10.0,
+    resolution: int = 40,
+    height_variation: float = 0.6,
+    noise_scale: float = 2.5,
+    name: str = "Terrain_Ground"
+) -> str:
+    """Generate rolling natural ground terrain mesh with smooth height displacement."""
+    blender = get_blender_connection()
+    res = blender.send_command("create_terrain_ground", {
+        "width": width,
+        "length": length,
+        "resolution": resolution,
+        "height_variation": height_variation,
+        "noise_scale": noise_scale,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def scatter_foliage(
+    target_surface: str,
+    asset_types: list[str] = ["grass", "weeds", "pebbles"],
+    density_preset: str = "lush",
+    slope_limit_deg: float = 45.0,
+    name: str = "Foliage_System"
+) -> str:
+    """Distribute multi-species organic foliage assets across ground with slope angle cutoff."""
+    blender = get_blender_connection()
+    res = blender.send_command("scatter_foliage", {
+        "target_surface": target_surface,
+        "asset_types": asset_types,
+        "density_preset": density_preset,
+        "slope_limit_deg": slope_limit_deg,
+        "name": name,
+    })
+    return json.dumps(res, indent=2)
+
+
+# ==============================================================================
+# Phase V4: Layered Thinking Architecture & Independent Critic Engine
+# ==============================================================================
+
+@mcp.tool()
+async def decompose_scene_intent(
+    user_prompt: str,
+    target_style: str = "photorealistic"
+) -> str:
+    """Decompose high-level scene prompt into ordered execution DAG and simulation mode recommendation."""
+    blender = get_blender_connection()
+    res = blender.send_command("decompose_scene_intent", {
+        "user_prompt": user_prompt,
+        "target_style": target_style,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def validate_aesthetic_quality(
+    root_object: str = None,
+    scene_check: bool = True
+) -> str:
+    """Independent Critic Gate: Audits topology, edge conditioning, soft goods, and PBR completeness."""
+    blender = get_blender_connection()
+    res = blender.send_command("validate_aesthetic_quality", {
+        "root_object": root_object,
+        "scene_check": scene_check,
+    })
+    return json.dumps(res, indent=2)
+
+
+@mcp.tool()
+async def audit_production_readiness(
+    asset_name: str,
+    target_engine: str = "blender_cycles"
+) -> str:
+    """Verify applied transforms, manifold watertight geometry, and material slots before pipeline delivery."""
+    blender = get_blender_connection()
+    res = blender.send_command("audit_production_readiness", {
+        "asset_name": asset_name,
+        "target_engine": target_engine,
     })
     return json.dumps(res, indent=2)
 

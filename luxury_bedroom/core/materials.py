@@ -1,186 +1,199 @@
-"""Multi-material PBR Palette Library for Contemporary Warm Luxury Bedroom Suite.
+"""Multi-material PBR Shaders for Aesthetic Modern Luxury Bedroom.
 
-Enforces 90/10 Hybrid Pipeline: materials are defined once and mapped by integer slot index,
-allowing single-buffer BMesh geometry to tag `face.material_index` without UI context.
+Defines decoupled PBR materials with physical roughness, sheen, and transmission.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-
-try:
-    import bpy
-    HAS_BPY = True
-except ImportError:
-    bpy = None
-    HAS_BPY = False
+import bpy
 
 
-class MaterialLibrary:
-    """Manages 10 reference PBR materials and maps them deterministically to integer indices."""
+def get_or_create_material(name: str) -> bpy.types.Material:
+    """Create or reset material with clean node tree."""
+    if name in bpy.data.materials:
+        mat = bpy.data.materials[name]
+    else:
+        mat = bpy.data.materials.new(name=name)
 
-    DEFINITIONS: Dict[str, Dict[str, Any]] = {
-        "TRAVERTINE_TILES": {
-            "base_color": (0.78, 0.74, 0.68, 1.0),
-            "roughness": 0.28,
-            "metallic": 0.0,
-            "specular_ior_level": 0.55,
-        },
-        "WALNUT_WOOD": {
-            "base_color": (0.18, 0.11, 0.07, 1.0),
-            "roughness": 0.35,
-            "metallic": 0.0,
-            "specular_ior_level": 0.5,
-        },
-        "TAUPE_BOUCLE": {
-            "base_color": (0.58, 0.54, 0.48, 1.0),
-            "roughness": 0.85,
-            "metallic": 0.0,
-            "sheen_weight": 0.9,
-            "sheen_tint": (0.9, 0.86, 0.82, 1.0),
-        },
-        "LINEN_WHITE": {
-            "base_color": (0.94, 0.93, 0.91, 1.0),
-            "roughness": 0.82,
-            "metallic": 0.0,
-            "subsurface_weight": 0.04,
-        },
-        "CHARCOAL_PLEAT": {
-            "base_color": (0.24, 0.23, 0.22, 1.0),
-            "roughness": 0.75,
-            "metallic": 0.0,
-            "sheen_weight": 0.5,
-        },
-        "BRUSHED_BRASS": {
-            "base_color": (0.92, 0.78, 0.45, 1.0),
-            "roughness": 0.25,
-            "metallic": 1.0,
-            "specular_ior_level": 0.7,
-        },
-        "MATTE_BLACK_METAL": {
-            "base_color": (0.05, 0.05, 0.05, 1.0),
-            "roughness": 0.40,
-            "metallic": 0.85,
-            "specular_ior_level": 0.5,
-        },
-        "TINTED_BRONZE_GLASS": {
-            "base_color": (0.42, 0.34, 0.26, 1.0),
-            "roughness": 0.05,
-            "metallic": 0.0,
-            "transmission_weight": 0.85,
-            "ior": 1.52,
-        },
-        "SHEER_WHITE": {
-            "base_color": (0.95, 0.95, 0.95, 0.6),
-            "roughness": 0.70,
-            "metallic": 0.0,
-            "transmission_weight": 0.50,
-        },
-        "LED_WARM_2700K": {
-            "base_color": (1.0, 0.92, 0.75, 1.0),
-            "emission_color": (1.0, 0.86, 0.65, 1.0),
-            "emission_strength": 16.0,
-            "roughness": 0.1,
-            "metallic": 0.0,
-        },
-    }
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    nodes.clear()
+    out = nodes.new(type="ShaderNodeOutputMaterial")
+    out.location = (600, 0)
+    bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
+    bsdf.location = (200, 0)
+    mat.node_tree.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    return mat
 
-    def __init__(self) -> None:
-        self._name_to_index: Dict[str, int] = {
-            name: idx for idx, name in enumerate(self.DEFINITIONS.keys())
-        }
-        self._index_to_name: Dict[int, str] = {
-            idx: name for idx, name in enumerate(self.DEFINITIONS.keys())
-        }
 
-    def get_material_names(self) -> List[str]:
-        """Return ordered list of material keys."""
-        return list(self.DEFINITIONS.keys())
-
-    def get_index(self, name: str) -> int:
-        """Get integer slot index for a material name."""
-        if name not in self._name_to_index:
-            raise KeyError(
-                f"Material '{name}' not found in MaterialLibrary. Valid names: {list(self._name_to_index.keys())}"
-            )
-        return self._name_to_index[name]
-
-    def get_definition(self, name: str) -> Dict[str, Any]:
-        """Return raw physical shader parameters for material name."""
-        return self.DEFINITIONS[name]
-
-    def create_or_get_material(self, name: str) -> Any:
-        """Create or reuse bpy.types.Material in Blender scene."""
-        if not HAS_BPY or bpy is None or not hasattr(bpy, "data"):
-            return {"name": name, **self.DEFINITIONS.get(name, {})}
-
-        mat_name = f"M_RefSuite_{name}"
-        if mat_name in bpy.data.materials:
-            return bpy.data.materials[mat_name]
-
-        mat = bpy.data.materials.new(name=mat_name)
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-
-        bsdf = nodes.get("Principled BSDF")
-        if bsdf:
-            props = self.DEFINITIONS.get(name, {})
-            if "base_color" in props and "Base Color" in bsdf.inputs:
-                bsdf.inputs["Base Color"].default_value = props["base_color"]
-            if "roughness" in props and "Roughness" in bsdf.inputs:
-                bsdf.inputs["Roughness"].default_value = props["roughness"]
-            if "metallic" in props and "Metallic" in bsdf.inputs:
-                bsdf.inputs["Metallic"].default_value = props["metallic"]
-            if "emission_color" in props:
-                if "Emission Color" in bsdf.inputs:
-                    bsdf.inputs["Emission Color"].default_value = props["emission_color"]
-                if "Emission Strength" in bsdf.inputs and "emission_strength" in props:
-                    bsdf.inputs["Emission Strength"].default_value = props["emission_strength"]
-            if "sheen_weight" in props:
-                if "Sheen Weight" in bsdf.inputs:
-                    bsdf.inputs["Sheen Weight"].default_value = props["sheen_weight"]
-                elif "Sheen" in bsdf.inputs:
-                    bsdf.inputs["Sheen"].default_value = props["sheen_weight"]
-            if "transmission_weight" in props:
-                if "Transmission Weight" in bsdf.inputs:
-                    bsdf.inputs["Transmission Weight"].default_value = props["transmission_weight"]
-                elif "Transmission" in bsdf.inputs:
-                    bsdf.inputs["Transmission"].default_value = props["transmission_weight"]
-            if "ior" in props and "IOR" in bsdf.inputs:
-                bsdf.inputs["IOR"].default_value = props["ior"]
-
-        return mat
-
-    def setup_blender_materials(self) -> None:
-        """Pre-create all physical materials in bpy.data.materials."""
-        if not HAS_BPY or bpy is None or not hasattr(bpy, "data"):
-            return
-        for name in self.get_material_names():
-            self.create_or_get_material(name)
-
-    def assign_to_object(self, obj: Any) -> None:
-        """Assign all materials in library order to an object so face.material_index matches get_index."""
-        if not HAS_BPY or bpy is None or obj is None or not hasattr(obj, "data"):
+def set_bsdf(bsdf: bpy.types.ShaderNodeBsdfPrincipled, key_candidates: list[str], val: any) -> None:
+    for k in key_candidates:
+        if k in bsdf.inputs:
+            bsdf.inputs[k].default_value = val
             return
 
-        expected_names = self.get_material_names()
-        current_mats = list(obj.data.materials)
 
-        # Check if already correctly assigned
-        if len(current_mats) == len(expected_names):
-            all_match = all(
-                m and m.name == f"M_RefSuite_{expected_names[i]}" for i, m in enumerate(current_mats)
-            )
-            if all_match:
-                return
+def setup_all_materials() -> dict[str, bpy.types.Material]:
+    """Build and return all materials dictionary."""
+    mats: dict[str, bpy.types.Material] = {}
 
-        mats = [self.create_or_get_material(name) for name in expected_names]
+    # 1. Warm Natural American Oak Wood (Bed, Nightstands)
+    mat = get_or_create_material("M_Warm_Oak_Wood")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.46, 0.30, 0.17, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.34)
+    set_bsdf(bsdf, ["Specular IOR Level", "Specular"], 0.52)
+    mats["OAK_WOOD"] = mat
 
-        if len(current_mats) == 0:
-            for m in mats:
-                obj.data.materials.append(m)
-        else:
-            for idx, m in enumerate(mats):
-                if idx < len(obj.data.materials):
-                    obj.data.materials[idx] = m
-                else:
-                    obj.data.materials.append(m)
+    # 2. Wide-Plank Satin Oak Flooring
+    mat = get_or_create_material("M_Oak_Floor_Planks")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.42, 0.28, 0.16, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.25)
+    set_bsdf(bsdf, ["Specular IOR Level", "Specular"], 0.60)
+    mats["OAK_FLOOR"] = mat
+
+    # 3. Padded Headboard Cream Bouclé Linen
+    mat = get_or_create_material("M_Padded_Headboard_Boucle")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.76, 0.71, 0.64, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.88)
+    set_bsdf(bsdf, ["Sheen Weight", "Sheen"], 0.85)
+    set_bsdf(bsdf, ["Sheen Tint"], (0.92, 0.88, 0.82, 1.0))
+    mats["HEADBOARD_BOUCLE"] = mat
+
+    # 4. Pure Crisp White Cotton (Sleeping Pillows)
+    mat = get_or_create_material("M_Pillow_Crisp_Cotton")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.96, 0.95, 0.94, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.70)
+    set_bsdf(bsdf, ["Sheen Weight", "Sheen"], 0.75)
+    set_bsdf(bsdf, ["Subsurface Weight", "Subsurface"], 0.05)
+    mats["PILLOW_COTTON"] = mat
+
+    # 5. Pillow Seam Welt Piping (Crisp ivory accent)
+    mat = get_or_create_material("M_Pillow_Welt_Piping")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.82, 0.78, 0.72, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.75)
+    mats["PILLOW_PIPING"] = mat
+
+    # 6. Folded Duvet Cozy Greige Blanket
+    mat = get_or_create_material("M_Duvet_Cozy_Greige")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.54, 0.47, 0.39, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.84)
+    set_bsdf(bsdf, ["Sheen Weight", "Sheen"], 0.80)
+    mats["DUVET_FABRIC"] = mat
+
+    # 7. Mattress Quilted Textile
+    mat = get_or_create_material("M_Mattress_Fabric")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.91, 0.90, 0.89, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.80)
+    mats["MATTRESS"] = mat
+
+    # 8. Minimalist Off-White Plaster Wall
+    mat = get_or_create_material("M_Wall_Minimalist_Plaster")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.88, 0.86, 0.82, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.92)
+    mats["WALL_PLASTER"] = mat
+
+    # 9. Baseboard Skirting
+    mat = get_or_create_material("M_Baseboard_Skirting")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.86, 0.84, 0.80, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.40)
+    mats["BASEBOARD"] = mat
+
+    # 10. Window Frame Dark Bronze / Black Metal
+    mat = get_or_create_material("M_Window_Frame_Metal")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.05, 0.05, 0.05, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.35)
+    set_bsdf(bsdf, ["Metallic"], 0.85)
+    mats["WINDOW_FRAME"] = mat
+
+    # 11. Sheer White Pleated Curtains
+    mat = get_or_create_material("M_Sheer_Curtain")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.96, 0.96, 0.96, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.80)
+    set_bsdf(bsdf, ["Transmission Weight", "Transmission"], 0.70)
+    set_bsdf(bsdf, ["Sheen Weight", "Sheen"], 0.90)
+    mats["SHEER_CURTAIN"] = mat
+
+    # 12. Architectural Clear Glass
+    mat = get_or_create_material("M_Window_Glass")
+    nodes = mat.node_tree.nodes
+    nodes.clear()
+    out = nodes.new(type="ShaderNodeOutputMaterial")
+    transp = nodes.new(type="ShaderNodeBsdfTransparent")
+    transp.inputs["Color"].default_value = (0.95, 0.98, 1.0, 1.0)
+    gloss = nodes.new(type="ShaderNodeBsdfGlossy")
+    gloss.inputs["Roughness"].default_value = 0.02
+    mix = nodes.new(type="ShaderNodeMixShader")
+    mix.inputs["Fac"].default_value = 0.08
+    mat.node_tree.links.new(transp.outputs["BSDF"], mix.inputs[1])
+    mat.node_tree.links.new(gloss.outputs["BSDF"], mix.inputs[2])
+    mat.node_tree.links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    mats["WINDOW_GLASS"] = mat
+
+    # 13. Brushed Champagne Brass
+    mat = get_or_create_material("M_Brushed_Brass")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.92, 0.78, 0.46, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.25)
+    set_bsdf(bsdf, ["Metallic"], 1.0)
+    set_bsdf(bsdf, ["Specular IOR Level", "Specular"], 0.70)
+    mats["BRUSHED_BRASS"] = mat
+
+    # 14. Matte Black Metal
+    mat = get_or_create_material("M_Matte_Black")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.03, 0.03, 0.03, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.50)
+    mats["MATTE_BLACK"] = mat
+
+    # 15. Warm 2700K LED
+    mat = get_or_create_material("M_Warm_LED_2700K")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (1.0, 0.90, 0.74, 1.0))
+    set_bsdf(bsdf, ["Emission Color"], (1.0, 0.86, 0.64, 1.0))
+    set_bsdf(bsdf, ["Emission Strength"], 16.0)
+    mats["WARM_LED"] = mat
+
+    # 16. Ceramic Vase Decor
+    mat = get_or_create_material("M_Ceramic_Vase")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.76, 0.68, 0.60, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.45)
+    mats["CERAMIC"] = mat
+
+    # 17. Hardcover Art Book
+    mat = get_or_create_material("M_Book_Cover")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.24, 0.25, 0.27, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.75)
+    mats["BOOK"] = mat
+
+    # 18. Plush Wool Area Rug
+    mat = get_or_create_material("M_Plush_Wool_Rug")
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    set_bsdf(bsdf, ["Base Color"], (0.84, 0.80, 0.74, 1.0))
+    set_bsdf(bsdf, ["Roughness"], 0.92)
+    set_bsdf(bsdf, ["Sheen Weight", "Sheen"], 0.60)
+    mats["RUG"] = mat
+
+    # 19. Glowing Morning Sky Exterior Plane
+    mat = get_or_create_material("M_Exterior_Morning_Sky")
+    nodes = mat.node_tree.nodes
+    nodes.clear()
+    out = nodes.new(type="ShaderNodeOutputMaterial")
+    em = nodes.new(type="ShaderNodeEmission")
+    em.inputs["Color"].default_value = (0.88, 0.94, 1.0, 1.0)
+    em.inputs["Strength"].default_value = 5.0
+    mat.node_tree.links.new(em.outputs["Emission"], out.inputs["Surface"])
+    mats["EXTERIOR_SKY"] = mat
+
+    return mats

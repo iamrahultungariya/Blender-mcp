@@ -96,9 +96,9 @@ Classify every single component into one of four physical surface domains:
 
 ### Phase 4: Live MCP & Native Tool Selection Matrix
 
-Always select tools from the verified FastMCP and BMesh toolkit:
+Always select tools from the verified FastMCP and BMesh toolkit across the 9 Major Production Systems:
 
-| Component Role | Verified FastMCP Tool | Native Blender Technique | Technical Justification |
+| Component Role / Production Stage | Verified FastMCP Tool | Native Blender Technique | Technical Justification |
 | :--- | :--- | :--- | :--- |
 | **Pillow / Cushion / Mattress** | `create_cushioned_profile` | BMesh parabolic vertex displacement + edge creases | Produces authentic lofted crown dome and perimeter welting in <10ms. |
 | **Subdivision Smoothing** | `setup_subdivision_cage` | `modifiers.new(type='SUBSURF')` | Applies Catmull-Clark subdivision while preserving boundary edge creases. |
@@ -107,6 +107,19 @@ Always select tools from the verified FastMCP and BMesh toolkit:
 | **Cables, Pipes, Hair** | `create_bezier_tube` | Bezier Spline + Bevel Object + `Alt+S` | Spline-based control with smooth tangent interpolation and tapered tips. |
 | **Curved Hard-Surface Cuts** | `clas_boolean_carve` | Pre-boolean grid cuts + `LoopTools Circle` | Cuts round apertures into quad grids without ruining edge flow. |
 | **Curvature Shading Artifact Fix** | *N/A (Modifier Stack)* | **Shrinkwrap Modifier** on target Vertex Group | Completely eliminates shading pinching on complex curved fillet transitions. |
+| **PBR Material Assignment** | `assign_pbr_material`, `modify_material_property` | Principled BSDF socket configuration | Version-aware socket lookup (Blender 3.x–5.x LTS) with multi-slot support. |
+| **Procedural Surface Shaders** | `create_procedural_shader` | Procedural node networks (15 presets: wood, marble, metal, concrete, etc.) | Physically believable materials with micro-roughness and bump without external image dependencies. |
+| **Shader Tree Validation** | `inspect_material_nodes`, `validate_material_setup` | Node tree graph connectivity audit | Detects disconnected nodes, missing outputs, or zero-roughness mirrors before rendering. |
+| **Studio & Cinematic Lighting** | `setup_studio_lighting`, `setup_environment_hdri` | 10 calibrated rigs (`three_point`, `cinematic`, `dramatic_rim`, etc.) + World HDRI | Dynamic energy/distance scaling to object bounds, Kelvin-to-RGB color balance, dedicated collection. |
+| **Camera Framing & DoF Bokeh** | `frame_camera_to_object`, `setup_camera_dof`, `create_turntable_camera` | Sensor-aware FOV trigonometry, TrackTo constraints, orbit keyframes | Precise optical framing with rule-of-thirds offsets, hero angles, and aperture blade bokeh. |
+| **Automated Mesh Repair** | `repair_mesh_topology` | BMesh non-manifold repair, weld doubles, recalculate normals | Cleans degenerates and loose geometry in memory (<10ms) before sub-d or booleans. |
+| **Quad Remeshing & Decimation** | `quad_remesh`, `decimate_mesh`, `generate_lod_chain` | QuadriFlow remeshing & ratio decimation | Generates clean uniform quad flow or multi-tier game LOD chains (LOD0–LOD3) preserving UVs. |
+| **Cloth Physics & Draping** | `setup_cloth_physics`, `bake_cloth_drop` | Headless iterative frame stepping + evaluated mesh freeze | Natural fabric folds and draping for bedsheets, tablecloths, curtains, and throws. |
+| **Surface Snapping & Alignment** | `snap_to_surface`, `align_object_to_surface` | Bounding-box raycast snapping + surface normal reorientation | Seats props flush on floors, desks, or walls with zero manual coordinate guesswork. |
+| **Memory-Efficient Instancing** | `scatter_instances`, `inspect_scatter_result` | Shared mesh datablocks (`Alt+D` instancing) | Batches thousands of debris, books, or foliage props with Poisson disk spacing and near-zero memory footprint. |
+| **Modifier Stack Pipeline** | `apply_modifier_stack`, `inspect_modifier_stack`, `freeze_modifiers` | Declarative modifier order enforcement & selective evaluation | Builds reliable bevel -> mirror -> subsurf chains and freezes them safely to static meshes. |
+| **Mechanical & Vehicle Rigging** | `setup_vehicle_rig`, `setup_hinge_constraint`, `setup_mechanical_pivot` | Empty hierarchy, Limit Rotation constraints, child-of parenting | Rig vehicles with steering/suspension, cabinets/doors with swing limits, and mechanical hinges. |
+| **Scene Checkpoints & Safe Mode** | `create_scene_checkpoint`, `restore_scene_checkpoint` | Non-destructive `.blend` snapshots & rollback indexing | Mandatory pre-flight safeguard before running destructive remeshing, boolean, or freezing operations. |
 | **Topology & Manifold QA** | `audit_mesh_topology` | `bmesh.ops.find_doubles`, check `is_manifold` | Verifies zero non-manifold edges, zero boundary holes, and quad integrity. |
 | **Game Asset Export & UVs** | `apply_uv_unwrap`, `export_game_asset` | Smart UV Project with margin isolation | Enforces clean UV islands and evaluated triangle budget decimation. |
 
@@ -162,3 +175,12 @@ Before writing any implementation script, the agent MUST output a plan matching 
 4. Resolved/Proposed Clarifications.
 
 Only after presenting this plan may the agent proceed to generate modular code.
+
+---
+
+## 3. Mandatory Safety & Scene Checkpoint Policy
+
+Before executing any high-risk or destructive operation:
+1. **Always Create a Checkpoint**: Invoke `create_scene_checkpoint(label="pre_destructive_op")` before running `quad_remesh`, `decimate_mesh`, `freeze_modifiers`, heavy boolean cuts, or large-scale cloth bakes.
+2. **Verify After Operation**: Inspect geometry via `audit_mesh_topology`, `inspect_modifier_stack`, or `inspect_cloth_simulation`.
+3. **Instant Rollback on Failure**: If self-intersections, non-manifold tears, or mesh corruption occur, call `restore_scene_checkpoint()` immediately to return the scene to its verified clean state without data loss.

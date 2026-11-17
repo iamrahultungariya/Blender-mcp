@@ -1,11 +1,11 @@
 [project]
 name = "mcp-for-blender"
 version = "2.2.7"
-description = "Open source Blender integration through the Model Context Protocol (not affiliated with Blender Foundation)"
+description = "Rahul 3D Engine integration through Model Context Protocol"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-    {name = "Siddharth Ahuja", email = "ahujasid@gmail.com"}
+    {name = "Rahul"}
 ]
 license = "MIT"
 classifiers = [

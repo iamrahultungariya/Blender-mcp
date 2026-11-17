@@ -36,3 +36,16 @@ supabase/.temp/
 
 # Local eval harness (see evals/README.md)
 evals/
+
+# Graphify temporary caches and daily snapshot backups
+graphify-out/cache/
+graphify-out/202*
+*.tmp
+
+
+# Blender temporary backup files
+*.blend1
+*.blend2
+*.blend@
+
+

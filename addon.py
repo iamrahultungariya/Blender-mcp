@@ -31,12 +31,12 @@ from contextlib import contextmanager, redirect_stdout, suppress
 from bpy.app.handlers import persistent
 
 bl_info = {
-    "name": "MCP for Blender",
-    "author": "Siddharth Ahuja",
+    "name": "Rahul 3D Engine",
+    "author": "Rahul",
     "version": (1, 8),
     "blender": (3, 0, 0),
-    "location": "View3D > Sidebar > MCP for Blender",
-    "description": "Connect Blender to Claude via MCP",
+    "location": "View3D > Sidebar > Rahul 3D",
+    "description": "Rahul 3D Engine MCP integration for autonomous 3D creation",
     "doc_url": "https://mcp-for-blender.com/",
     "category": "Interface",
 }
@@ -1998,6 +1998,138 @@ class BlenderMCPServer:
         if cmd_type == "get_evaluated_budget_report":
             return {"status": "success", "result": self.get_evaluated_budget_report(**params)}
 
+        # Phase 1: Scene Checkpoint & Safety Engine
+        if cmd_type == "create_scene_checkpoint":
+            return {"status": "success", "result": self.create_scene_checkpoint(**params)}
+        if cmd_type == "restore_scene_checkpoint":
+            return {"status": "success", "result": self.restore_scene_checkpoint(**params)}
+        if cmd_type == "list_scene_checkpoints":
+            return {"status": "success", "result": self.list_scene_checkpoints(**params)}
+        if cmd_type == "delete_scene_checkpoint":
+            return {"status": "success", "result": self.delete_scene_checkpoint(**params)}
+
+        # Phase 2: PBR Material & Procedural Shader Engine
+        if cmd_type == "assign_pbr_material":
+            return {"status": "success", "result": self.assign_pbr_material(**params)}
+        if cmd_type == "inspect_material_nodes":
+            return {"status": "success", "result": self.inspect_material_nodes(**params)}
+        if cmd_type == "create_procedural_shader":
+            return {"status": "success", "result": self.create_procedural_shader(**params)}
+        if cmd_type == "modify_material_property":
+            return {"status": "success", "result": self.modify_material_property(**params)}
+        if cmd_type == "validate_material_setup":
+            return {"status": "success", "result": self.validate_material_setup(**params)}
+
+        # Phase 3: Cinematic Studio Lighting & HDRI Engine
+        if cmd_type == "setup_studio_lighting":
+            return {"status": "success", "result": self.setup_studio_lighting(**params)}
+        if cmd_type == "setup_environment_hdri":
+            return {"status": "success", "result": self.setup_environment_hdri(**params)}
+        if cmd_type == "inspect_lighting_setup":
+            return {"status": "success", "result": self.inspect_lighting_setup(**params)}
+        if cmd_type == "adjust_lighting_for_object":
+            return {"status": "success", "result": self.adjust_lighting_for_object(**params)}
+
+        # Phase 4: Camera Framing & DoF Engine
+        if cmd_type == "frame_camera_to_object":
+            return {"status": "success", "result": self.frame_camera_to_object(**params)}
+        if cmd_type == "setup_camera_dof":
+            return {"status": "success", "result": self.setup_camera_dof(**params)}
+        if cmd_type == "create_turntable_camera":
+            return {"status": "success", "result": self.create_turntable_camera(**params)}
+        if cmd_type == "inspect_camera_setup":
+            return {"status": "success", "result": self.inspect_camera_setup(**params)}
+
+        # Phase 5: Automated Mesh Repair & Remeshing Engine
+        if cmd_type == "repair_mesh_topology":
+            return {"status": "success", "result": self.repair_mesh_topology(**params)}
+        if cmd_type == "decimate_mesh":
+            return {"status": "success", "result": self.decimate_mesh(**params)}
+        if cmd_type == "quad_remesh":
+            return {"status": "success", "result": self.quad_remesh(**params)}
+        if cmd_type == "generate_lod_chain":
+            return {"status": "success", "result": self.generate_lod_chain(**params)}
+
+        # Phase 6: Cloth Simulation & Surface Placement Engine
+        if cmd_type == "setup_cloth_physics":
+            return {"status": "success", "result": self.setup_cloth_physics(**params)}
+        if cmd_type == "bake_cloth_drop":
+            return {"status": "success", "result": self.bake_cloth_drop(**params)}
+        if cmd_type == "inspect_cloth_simulation":
+            return {"status": "success", "result": self.inspect_cloth_simulation(**params)}
+        if cmd_type == "snap_to_surface":
+            return {"status": "success", "result": self.snap_to_surface(**params)}
+        if cmd_type == "align_object_to_surface":
+            return {"status": "success", "result": self.align_object_to_surface(**params)}
+        if cmd_type == "scatter_instances":
+            return {"status": "success", "result": self.scatter_instances(**params)}
+        if cmd_type == "inspect_scatter_result":
+            return {"status": "success", "result": self.inspect_scatter_result(**params)}
+
+        # Phase 7: Modifier Stack Automation & Mechanical Rigging Engine
+        if cmd_type == "apply_modifier_stack":
+            return {"status": "success", "result": self.apply_modifier_stack(**params)}
+        if cmd_type == "inspect_modifier_stack":
+            return {"status": "success", "result": self.inspect_modifier_stack(**params)}
+        if cmd_type == "freeze_modifiers":
+            return {"status": "success", "result": self.freeze_modifiers(**params)}
+        if cmd_type == "setup_vehicle_rig":
+            return {"status": "success", "result": self.setup_vehicle_rig(**params)}
+        if cmd_type == "setup_hinge_constraint":
+            return {"status": "success", "result": self.setup_hinge_constraint(**params)}
+        if cmd_type == "setup_mechanical_pivot":
+            return {"status": "success", "result": self.setup_mechanical_pivot(**params)}
+        if cmd_type == "inspect_rig_hierarchy":
+            return {"status": "success", "result": self.inspect_rig_hierarchy(**params)}
+
+        # Phase V3.1: Soft Goods & Hard-Surface Edge Conditioning
+        if cmd_type == "apply_edge_conditioning":
+            return {"status": "success", "result": self.apply_edge_conditioning(**params)}
+        if cmd_type == "create_pillow":
+            return {"status": "success", "result": self.create_pillow(**params)}
+        if cmd_type == "create_curtains":
+            return {"status": "success", "result": self.create_curtains(**params)}
+        if cmd_type == "create_duvet":
+            return {"status": "success", "result": self.create_duvet(**params)}
+        if cmd_type == "create_blanket":
+            return {"status": "success", "result": self.create_blanket(**params)}
+        if cmd_type == "create_tufted_surface":
+            return {"status": "success", "result": self.create_tufted_surface(**params)}
+
+        # Phase V3.2: Furniture & Architectural Detail Engine
+        if cmd_type == "create_bed":
+            return {"status": "success", "result": self.create_bed(**params)}
+        if cmd_type == "create_sofa":
+            return {"status": "success", "result": self.create_sofa(**params)}
+        if cmd_type == "create_chair":
+            return {"status": "success", "result": self.create_chair(**params)}
+        if cmd_type == "create_table":
+            return {"status": "success", "result": self.create_table(**params)}
+        if cmd_type == "create_wardrobe":
+            return {"status": "success", "result": self.create_wardrobe(**params)}
+        if cmd_type == "create_door_assembly":
+            return {"status": "success", "result": self.create_door_assembly(**params)}
+
+        # Phase V3.3: Nature & Organic Environment Engine & Assembly Physics
+        if cmd_type == "simulate_cloth_assembly":
+            return {"status": "success", "result": self.simulate_cloth_assembly(**params)}
+        if cmd_type == "create_grass_blade_cluster":
+            return {"status": "success", "result": self.create_grass_blade_cluster(**params)}
+        if cmd_type == "create_grass_field":
+            return {"status": "success", "result": self.create_grass_field(**params)}
+        if cmd_type == "create_terrain_ground":
+            return {"status": "success", "result": self.create_terrain_ground(**params)}
+        if cmd_type == "scatter_foliage":
+            return {"status": "success", "result": self.scatter_foliage(**params)}
+
+        # Phase V4: Layered Thinking Architecture & Independent Critic Engine
+        if cmd_type == "decompose_scene_intent":
+            return {"status": "success", "result": self.decompose_scene_intent(**params)}
+        if cmd_type == "validate_aesthetic_quality":
+            return {"status": "success", "result": self.validate_aesthetic_quality(**params)}
+        if cmd_type == "audit_production_readiness":
+            return {"status": "success", "result": self.audit_production_readiness(**params)}
+
         # Add a handler for checking PolyHaven status
         if cmd_type == "get_polyhaven_status":
             return {"status": "success", "result": self.get_polyhaven_status()}
@@ -3856,6 +3988,356 @@ class BlenderMCPServer:
             "target_budget": target_budget,
             "budget_status": budget_status
         }
+
+    # ------------------------------------------------------------------
+    # Phase 1: Scene Checkpoint & Safety Engine
+    # ------------------------------------------------------------------
+    def create_scene_checkpoint(self, label, description="", checkpoint_type="MANUAL"):
+        from blender_mcp.checkpoint_manager import create_checkpoint
+        return create_checkpoint(label=label, description=description, checkpoint_type=checkpoint_type)
+
+    def restore_scene_checkpoint(self, label_or_id, restore_mode="RELOAD"):
+        from blender_mcp.checkpoint_manager import restore_checkpoint
+        return restore_checkpoint(label_or_id=label_or_id, restore_mode=restore_mode)
+
+    def list_scene_checkpoints(self):
+        from blender_mcp.checkpoint_manager import list_checkpoints
+        return list_checkpoints()
+
+    def delete_scene_checkpoint(self, label_or_id):
+        from blender_mcp.checkpoint_manager import delete_checkpoint
+        return delete_checkpoint(label_or_id=label_or_id)
+
+    # ------------------------------------------------------------------
+    # Phase 2: PBR Material & Procedural Shader Engine
+    # ------------------------------------------------------------------
+    def assign_pbr_material(self, object_name, material_name, base_color=(0.8, 0.8, 0.8, 1.0),
+                            metallic=0.0, roughness=0.5, alpha=1.0,
+                            emission_color=(0.0, 0.0, 0.0, 1.0), emission_strength=0.0,
+                            normal_strength=1.0, assign_mode="ACTIVE_OR_NEW"):
+        from blender_mcp.material_engine import assign_pbr_material as _assign
+        return _assign(object_name=object_name, material_name=material_name, base_color=base_color,
+                       metallic=metallic, roughness=roughness, alpha=alpha,
+                       emission_color=emission_color, emission_strength=emission_strength,
+                       normal_strength=normal_strength, assign_mode=assign_mode)
+
+    def inspect_material_nodes(self, material_name, include_links=True, include_node_properties=True):
+        from blender_mcp.material_engine import inspect_material_nodes as _inspect
+        return _inspect(material_name=material_name, include_links=include_links,
+                        include_node_properties=include_node_properties)
+
+    def create_procedural_shader(self, material_name, preset="wood", object_name=None,
+                                 scale=1.0, color_tint=None, roughness_multiplier=1.0):
+        from blender_mcp.material_engine import create_procedural_shader as _gen
+        return _gen(material_name=material_name, preset=preset, object_name=object_name,
+                    scale=scale, color_tint=color_tint, roughness_multiplier=roughness_multiplier)
+
+    def modify_material_property(self, material_name, property_name, value):
+        from blender_mcp.material_engine import modify_material_property as _mod
+        return _mod(material_name=material_name, property_name=property_name, value=value)
+
+    def validate_material_setup(self, material_name):
+        from blender_mcp.material_engine import validate_material_setup as _val
+        return _val(material_name=material_name)
+
+    # ------------------------------------------------------------------
+    # Phase 3: Cinematic Studio Lighting & HDRI Engine
+    # ------------------------------------------------------------------
+    def setup_studio_lighting(self, preset="three_point", target_object=None,
+                               energy_multiplier=1.0, color_temperature=5500.0,
+                               shadow_quality="HIGH", world_strength=0.1,
+                               collection_name="Lighting_Studio"):
+        from blender_mcp.lighting_engine import setup_studio_lighting as _setup_lights
+        return _setup_lights(preset=preset, target_object=target_object,
+                             energy_multiplier=energy_multiplier, color_temperature=color_temperature,
+                             shadow_quality=shadow_quality, world_strength=world_strength,
+                             collection_name=collection_name)
+
+    def setup_environment_hdri(self, hdri_path_or_preset="studio", strength=1.0,
+                               rotation=0.0, background_visibility=True):
+        from blender_mcp.lighting_engine import setup_environment_hdri as _setup_hdri
+        return _setup_hdri(hdri_path_or_preset=hdri_path_or_preset, strength=strength,
+                           rotation=rotation, background_visibility=background_visibility)
+
+    def inspect_lighting_setup(self):
+        from blender_mcp.lighting_engine import inspect_lighting_setup as _insp_lights
+        return _insp_lights()
+
+    def adjust_lighting_for_object(self, target_object, key_fill_ratio=2.5):
+        from blender_mcp.lighting_engine import adjust_lighting_for_object as _adj_lights
+        return _adj_lights(target_object=target_object, key_fill_ratio=key_fill_ratio)
+
+    # ------------------------------------------------------------------
+    # Phase 4: Camera Framing, Composition & Depth of Field Engine
+    # ------------------------------------------------------------------
+    def frame_camera_to_object(self, object_name, lens_mm=50.0, angle="three_quarters",
+                               margin=1.15, camera_name="Camera_Main", composition="center"):
+        from blender_mcp.camera_engine import frame_camera_to_object as _frame
+        return _frame(object_name=object_name, lens_mm=lens_mm, angle=angle,
+                      margin=margin, camera_name=camera_name, composition=composition)
+
+    def setup_camera_dof(self, target_object=None, f_stop=2.8, focus_distance=0.0,
+                         enabled=True, camera_name="Camera_Main"):
+        from blender_mcp.camera_engine import setup_camera_dof as _dof
+        return _dof(target_object=target_object, f_stop=f_stop, focus_distance=focus_distance,
+                    enabled=enabled, camera_name=camera_name)
+
+    def create_turntable_camera(self, target_object, frames=120, height=1.5,
+                                radius=0.0, start_frame=1, end_frame=120,
+                                camera_name="Camera_Turntable"):
+        from blender_mcp.camera_engine import create_turntable_camera as _tt
+        return _tt(target_object=target_object, frames=frames, height=height,
+                   radius=radius, start_frame=start_frame, end_frame=end_frame,
+                   camera_name=camera_name)
+
+    def inspect_camera_setup(self, camera_name="Camera_Main"):
+        from blender_mcp.camera_engine import inspect_camera_setup as _insp_cam
+        return _insp_cam(camera_name=camera_name)
+
+    # ------------------------------------------------------------------
+    # Phase 5: Automated Mesh Repair, Remeshing & Decimation Engine
+    # ------------------------------------------------------------------
+    def repair_mesh_topology(self, object_name, remove_doubles=True, remove_loose=True,
+                             fix_normals=True, dissolve_degenerate=True, merge_distance=0.0001):
+        from blender_mcp.topology_engine import repair_mesh_topology as _repair
+        return _repair(object_name=object_name, remove_doubles=remove_doubles, remove_loose=remove_loose,
+                       fix_normals=fix_normals, dissolve_degenerate=dissolve_degenerate,
+                       merge_distance=merge_distance)
+
+    def decimate_mesh(self, object_name, target_ratio=0.5, preserve_uvs=True,
+                      preserve_symmetry=False, triangulate=False, apply_modifier=False):
+        from blender_mcp.topology_engine import decimate_mesh as _dec
+        return _dec(object_name=object_name, target_ratio=target_ratio, preserve_uvs=preserve_uvs,
+                    preserve_symmetry=preserve_symmetry, triangulate=triangulate,
+                    apply_modifier=apply_modifier)
+
+    def quad_remesh(self, object_name, target_quads=5000, preserve_symmetry=False,
+                    preserve_sharp=True, preserve_boundary=True, adaptive_size=50):
+        from blender_mcp.topology_engine import quad_remesh as _remesh
+        return _remesh(object_name=object_name, target_quads=target_quads,
+                       preserve_symmetry=preserve_symmetry, preserve_sharp=preserve_sharp,
+                       preserve_boundary=preserve_boundary, adaptive_size=adaptive_size)
+
+    def generate_lod_chain(self, object_name, lod_ratios=None, collection_name="LODs"):
+        from blender_mcp.topology_engine import generate_lod_chain as _lod
+        return _lod(object_name=object_name, lod_ratios=lod_ratios, collection_name=collection_name)
+
+    # ------------------------------------------------------------------
+    # Phase 6: Cloth Simulation & Surface Placement Engine
+    # ------------------------------------------------------------------
+    def setup_cloth_physics(self, cloth_object, preset="cotton", mass=None,
+                            tension=None, compression=None, shear=None,
+                            bending=None, damping=None, pressure=None,
+                            pressure_factor=None, gravity_scale=None,
+                            shrink_factor=None, quality_steps=5):
+        from blender_mcp.cloth_engine import setup_cloth_physics as _cloth_setup
+        return _cloth_setup(cloth_object=cloth_object, preset=preset, mass=mass,
+                            tension=tension, compression=compression, shear=shear,
+                            bending=bending, damping=damping, pressure=pressure,
+                            pressure_factor=pressure_factor, gravity_scale=gravity_scale,
+                            shrink_factor=shrink_factor, quality_steps=quality_steps)
+
+    def bake_cloth_drop(self, cloth_object, collision_objects=None, steps=40,
+                        pin_boundary=False, apply_result=True):
+        from blender_mcp.cloth_engine import bake_cloth_drop as _cloth_bake
+        return _cloth_bake(cloth_object=cloth_object, collision_objects=collision_objects,
+                           steps=steps, pin_boundary=pin_boundary, apply_result=apply_result)
+
+    def inspect_cloth_simulation(self, cloth_object):
+        from blender_mcp.cloth_engine import inspect_cloth_simulation as _cloth_insp
+        return _cloth_insp(cloth_object=cloth_object)
+
+    def snap_to_surface(self, object_name, target_surface_name, offset=0.0,
+                        alignment_mode="BOTTOM_TO_SURFACE", ray_direction=None):
+        from blender_mcp.placement_engine import snap_to_surface as _snap
+        return _snap(object_name=object_name, target_surface_name=target_surface_name,
+                     offset=offset, alignment_mode=alignment_mode, ray_direction=ray_direction)
+
+    def align_object_to_surface(self, object_name, target_surface_name):
+        from blender_mcp.placement_engine import align_object_to_surface as _align
+        return _align(object_name=object_name, target_surface_name=target_surface_name)
+
+    def scatter_instances(self, collection_name, target_surface, count=20,
+                          random_rotation=True, random_scale=None, min_distance=0.1,
+                          distribution="random", seed=42):
+        from blender_mcp.placement_engine import scatter_instances as _scatter
+        return _scatter(collection_name=collection_name, target_surface=target_surface,
+                        count=count, random_rotation=random_rotation, random_scale=random_scale,
+                        min_distance=min_distance, distribution=distribution, seed=seed)
+
+    def inspect_scatter_result(self, target_surface):
+        from blender_mcp.placement_engine import inspect_scatter_result as _scatter_insp
+        return _scatter_insp(target_surface=target_surface)
+
+    # ------------------------------------------------------------------
+    # Phase 7: Modifier Stack Automation & Mechanical Rigging Engine
+    # ------------------------------------------------------------------
+    def apply_modifier_stack(self, object_name, stack, apply_immediately=False):
+        from blender_mcp.modifier_engine import apply_modifier_stack as _mod_stack
+        return _mod_stack(object_name=object_name, stack=stack, apply_immediately=apply_immediately)
+
+    def inspect_modifier_stack(self, object_name):
+        from blender_mcp.modifier_engine import inspect_modifier_stack as _mod_insp
+        return _mod_insp(object_name=object_name)
+
+    def freeze_modifiers(self, object_name, modifier_names=None, create_backup=True):
+        from blender_mcp.modifier_engine import freeze_modifiers as _freeze
+        return _freeze(object_name=object_name, modifier_names=modifier_names, create_backup=create_backup)
+
+    def setup_vehicle_rig(self, chassis_obj, wheel_objs, steering_wheels=None,
+                          suspension_enabled=False, rig_name="Vehicle_Rig"):
+        from blender_mcp.rigging_engine import setup_vehicle_rig as _v_rig
+        return _v_rig(chassis_obj=chassis_obj, wheel_objs=wheel_objs,
+                      steering_wheels=steering_wheels, suspension_enabled=suspension_enabled,
+                      rig_name=rig_name)
+
+    def setup_hinge_constraint(self, door_obj, frame_obj=None, axis="Z",
+                               limits=None, hinge_position=None, constraint_type="LIMIT_ROTATION"):
+        from blender_mcp.rigging_engine import setup_hinge_constraint as _hinge
+        return _hinge(door_obj=door_obj, frame_obj=frame_obj, axis=axis,
+                      limits=limits, hinge_position=hinge_position, constraint_type=constraint_type)
+
+    def setup_mechanical_pivot(self, object_name, pivot_location, parent_name=None):
+        from blender_mcp.rigging_engine import setup_mechanical_pivot as _pivot
+        return _pivot(object_name=object_name, pivot_location=pivot_location, parent_name=parent_name)
+
+    def inspect_rig_hierarchy(self, root_obj):
+        from blender_mcp.rigging_engine import inspect_rig_hierarchy as _rig_insp
+        return _rig_insp(root_obj=root_obj)
+
+    # ------------------------------------------------------------------
+    # Phase V3.1: Soft Goods & Hard-Surface Edge Conditioning
+    # ------------------------------------------------------------------
+    def apply_edge_conditioning(self, object_name, mode="bevel_weight", angle_threshold_deg=30.0,
+                                bevel_weight=1.0, crease_weight=0.0, bevel_width=0.008,
+                                bevel_segments=2, add_weighted_normal=True, keep_sharp=True):
+        from blender_mcp.modifier_engine import apply_edge_conditioning as _edge_cond
+        return _edge_cond(object_name=object_name, mode=mode, angle_threshold_deg=angle_threshold_deg,
+                          bevel_weight=bevel_weight, crease_weight=crease_weight, bevel_width=bevel_width,
+                          bevel_segments=bevel_segments, add_weighted_normal=add_weighted_normal,
+                          keep_sharp=keep_sharp)
+
+    def create_pillow(self, shape="classic", width=0.5, length=0.5, thickness=0.18,
+                      puffiness=1.0, seam_piping=True, tufting=False, use_physics=False,
+                      simulation_mode=None, name="Pillow"):
+        from blender_mcp.soft_goods_engine import create_pillow as _pillow
+        return _pillow(shape=shape, width=width, length=length, thickness=thickness,
+                       puffiness=puffiness, seam_piping=seam_piping, tufting=tufting,
+                       use_physics=use_physics, simulation_mode=simulation_mode, name=name)
+
+    def create_curtains(self, width=1.5, height=2.4, pleat_count=8, bunch_factor=0.6,
+                        rod_offset=0.05, simulation_mode="parametric", name="Curtains"):
+        from blender_mcp.soft_goods_engine import create_curtains as _curt
+        return _curt(width=width, height=height, pleat_count=pleat_count,
+                     bunch_factor=bunch_factor, rod_offset=rod_offset,
+                     simulation_mode=simulation_mode, name=name)
+
+    def create_duvet(self, bed_width=1.8, bed_length=2.0, overhang=0.25, thickness=0.04,
+                     baffle_box=True, simulation_mode="parametric", name="Duvet"):
+        from blender_mcp.soft_goods_engine import create_duvet as _duvet
+        return _duvet(bed_width=bed_width, bed_length=bed_length, overhang=overhang,
+                      thickness=thickness, baffle_box=baffle_box,
+                      simulation_mode=simulation_mode, name=name)
+
+    def create_blanket(self, width=1.4, length=1.8, drape_angle=15.0, thickness=0.015,
+                       fold_back=0.2, simulation_mode="parametric", name="Blanket"):
+        from blender_mcp.soft_goods_engine import create_blanket as _blanket
+        return _blanket(width=width, length=length, drape_angle=drape_angle,
+                        thickness=thickness, fold_back=fold_back,
+                        simulation_mode=simulation_mode, name=name)
+
+    def create_tufted_surface(self, width=1.0, height=1.0, rows=4, cols=4,
+                              button_depth=0.03, diamond_pattern=True, name="Tufted_Surface"):
+        from blender_mcp.soft_goods_engine import create_tufted_surface as _tuft
+        return _tuft(width=width, height=height, rows=rows, cols=cols,
+                     button_depth=button_depth, diamond_pattern=diamond_pattern, name=name)
+
+    # ------------------------------------------------------------------
+    # Phase V3.2: Furniture & Architectural Detail Engine
+    # ------------------------------------------------------------------
+    def create_bed(self, style="modern", dimensions=(2.0, 1.8, 0.45), headboard_style="tufted",
+                   include_mattress=True, include_pillows=True, include_duvet=True, name="Bed"):
+        from blender_mcp.furniture_engine import create_bed as _bed
+        return _bed(style=style, dimensions=dimensions, headboard_style=headboard_style,
+                    include_mattress=include_mattress, include_pillows=include_pillows,
+                    include_duvet=include_duvet, name=name)
+
+    def create_sofa(self, style="modern", seats=3, armrest_style="rounded",
+                    cushion_puffiness=0.85, leg_style="tapered_metal", name="Sofa"):
+        from blender_mcp.furniture_engine import create_sofa as _sofa
+        return _sofa(style=style, seats=seats, armrest_style=armrest_style,
+                     cushion_puffiness=cushion_puffiness, leg_style=leg_style, name=name)
+
+    def create_chair(self, style="dining", seat_height=0.45, backrest_style="curved",
+                     leg_style="tapered", name="Chair"):
+        from blender_mcp.furniture_engine import create_chair as _chair
+        return _chair(style=style, seat_height=seat_height, backrest_style=backrest_style,
+                      leg_style=leg_style, name=name)
+
+    def create_table(self, style="dining", length=1.8, width=0.9, height=0.76,
+                     tabletop_thickness=0.04, leg_style="angled_post", name="Table"):
+        from blender_mcp.furniture_engine import create_table as _table
+        return _table(style=style, length=length, width=width, height=height,
+                      tabletop_thickness=tabletop_thickness, leg_style=leg_style, name=name)
+
+    def create_wardrobe(self, width=1.4, height=2.2, depth=0.6, door_count=2,
+                        has_drawers=True, handle_style="bar", name="Wardrobe"):
+        from blender_mcp.furniture_engine import create_wardrobe as _wardrobe
+        return _wardrobe(width=width, height=height, depth=depth, door_count=door_count,
+                         has_drawers=has_drawers, handle_style=handle_style, name=name)
+
+    def create_door_assembly(self, width=0.9, height=2.1, frame_depth=0.15,
+                             panel_style="six_panel", handle_type="lever", name="Door_Assembly"):
+        from blender_mcp.furniture_engine import create_door_assembly as _door
+        return _door(width=width, height=height, frame_depth=frame_depth,
+                     panel_style=panel_style, handle_type=handle_type, name=name)
+
+    # ------------------------------------------------------------------
+    # Phase V3.3: Nature & Organic Environment Engine & Assembly Physics
+    # ------------------------------------------------------------------
+    def simulate_cloth_assembly(self, assembly_root, target_obstacles=None, steps=50, apply_result=False):
+        from blender_mcp.cloth_engine import simulate_cloth_assembly as _cloth_sim
+        return _cloth_sim(assembly_root=assembly_root, target_obstacles=target_obstacles,
+                          steps=steps, apply_result=apply_result)
+
+    def create_grass_blade_cluster(self, blade_count=14, height=0.35, curve_intensity=0.8,
+                                   dead_blade_ratio=0.25, name="Grass_Cluster"):
+        from blender_mcp.nature_engine import create_grass_blade_cluster as _grass
+        return _grass(blade_count=blade_count, height=height, curve_intensity=curve_intensity,
+                      dead_blade_ratio=dead_blade_ratio, name=name)
+
+    def create_grass_field(self, target_ground, cluster_collection=None, density=150.0,
+                           patchiness=0.7, scale_range=(0.7, 1.3), seed=42):
+        from blender_mcp.nature_engine import create_grass_field as _field
+        return _field(target_ground=target_ground, cluster_collection=cluster_collection,
+                      density=density, patchiness=patchiness, scale_range=scale_range, seed=seed)
+
+    def create_terrain_ground(self, width=10.0, length=10.0, resolution=40,
+                              height_variation=0.6, noise_scale=2.5, name="Terrain_Ground"):
+        from blender_mcp.nature_engine import create_terrain_ground as _terrain
+        return _terrain(width=width, length=length, resolution=resolution,
+                        height_variation=height_variation, noise_scale=noise_scale, name=name)
+
+    def scatter_foliage(self, target_surface, asset_types=None, density_preset="lush",
+                        slope_limit_deg=45.0, name="Foliage_System"):
+        from blender_mcp.nature_engine import scatter_foliage as _foliage
+        return _foliage(target_surface=target_surface, asset_types=asset_types or ["grass", "weeds", "pebbles"],
+                        density_preset=density_preset, slope_limit_deg=slope_limit_deg, name=name)
+
+    # ------------------------------------------------------------------
+    # Phase V4: Layered Thinking Architecture & Independent Critic Engine
+    # ------------------------------------------------------------------
+    def decompose_scene_intent(self, user_prompt, target_style="photorealistic"):
+        from blender_mcp.critic_engine import decompose_scene_intent as _intent
+        return _intent(user_prompt=user_prompt, target_style=target_style)
+
+    def validate_aesthetic_quality(self, root_object=None, scene_check=True):
+        from blender_mcp.critic_engine import validate_aesthetic_quality as _critic
+        return _critic(root_object=root_object, scene_check=scene_check)
+
+    def audit_production_readiness(self, asset_name, target_engine="blender_cycles"):
+        from blender_mcp.critic_engine import audit_production_readiness as _prod_gate
+        return _prod_gate(asset_name=asset_name, target_engine=target_engine)
 
 
     # ------------------------------------------------------------------
@@ -8030,11 +8512,11 @@ class BLENDERMCP_AddonPreferences(bpy.types.AddonPreferences):
 
 # Blender UI Panel
 class BLENDERMCP_PT_Panel(bpy.types.Panel):
-    bl_label = "MCP for Blender"
+    bl_label = "Rahul 3D Engine"
     bl_idname = "BLENDERMCP_PT_Panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'MCP for Blender'
+    bl_category = 'Rahul 3D'
 
     def _integration_header(self, layout, scene, prop_name, title, icon):
         """Draw an integration as a box with a checkbox header row.
@@ -8294,7 +8776,7 @@ _addon_update = {"status": "idle", "version": None, "source": None, "error": Non
 def addon_release_key(source):
     """(major, minor, patch, protocol) of an addon.py's text, or None if it isn't one."""
     bl_info_at = source.find("bl_info = {")
-    if bl_info_at < 0 or '"name": "MCP for Blender"' not in source[bl_info_at:bl_info_at + 200]:
+    if bl_info_at < 0 or ('"name": "Rahul 3D Engine"' not in source[bl_info_at:bl_info_at + 200] and '"name": "MCP for Blender"' not in source[bl_info_at:bl_info_at + 200]):
         return None
     version = _ADDON_VERSION_RE.search(source, bl_info_at)
     protocol = _ADDON_PROTOCOL_RE.search(source)

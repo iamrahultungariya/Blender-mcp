@@ -175,40 +175,28 @@ class VehicleThinkingEngine:
         z_roof_high = height                 # Full raised roof peak (~2.75m)
         z_beltline = height * 0.52           # Side rubbing strip height (~1.43m)
 
-        # 1. Hood Centerline Spline (Front to Cowl)
-        # Slopes downwards towards the front with subtle parabolic crown
-        hood_pts = []
-        n_hood = 6
-        for i in range(n_hood):
-            t = i / (n_hood - 1)
-            y = (1.0 - t) * y_hood_front + t * y_cowl
-            # Parabolic drop
-            z = (1.0 - t) * z_hood_front + t * z_cowl + 0.02 * math.sin(t * math.pi)
-            hood_pts.append([0.0, float(y), float(z)])
+        # 1. Hood Centerline Spline (Front to Cowl) with Cubic Bezier
+        from blender_mcp.bmesh_toolkit import eval_cubic_bezier_curve
+        p0_hood = [0.0, y_hood_front, z_hood_front]
+        p1_hood = [0.0, y_hood_front + 0.35 * (y_cowl - y_hood_front), z_hood_front + 0.15 * (z_cowl - z_hood_front) + 0.035]
+        p2_hood = [0.0, y_hood_front + 0.75 * (y_cowl - y_hood_front), z_hood_front + 0.65 * (z_cowl - z_hood_front) + 0.025]
+        p3_hood = [0.0, y_cowl, z_cowl]
+        hood_pts = eval_cubic_bezier_curve(p0_hood, p1_hood, p2_hood, p3_hood, num_samples=8).tolist()
 
-        # 2. Windshield Centerline Spline (Cowl to Roof Header)
-        # Rakes backward ~44 deg
-        windshield_pts = []
-        n_ws = 6
-        for i in range(n_ws):
-            t = i / (n_ws - 1)
-            y = (1.0 - t) * y_cowl + t * y_windshield_top
-            z = (1.0 - t) * z_cowl + t * z_windshield_top
-            windshield_pts.append([0.0, float(y), float(z)])
+        # 2. Windshield Centerline Spline (Cowl to Roof Header) with Compound Aerodynamic Curvature
+        p0_ws = [0.0, y_cowl, z_cowl]
+        p1_ws = [0.0, y_cowl + 0.33 * (y_windshield_top - y_cowl), z_cowl + 0.35 * (z_windshield_top - z_cowl) + 0.045]
+        p2_ws = [0.0, y_cowl + 0.68 * (y_windshield_top - y_cowl), z_cowl + 0.72 * (z_windshield_top - z_cowl) + 0.025]
+        p3_ws = [0.0, y_windshield_top, z_windshield_top]
+        windshield_pts = eval_cubic_bezier_curve(p0_ws, p1_ws, p2_ws, p3_ws, num_samples=8).tolist()
 
-        # 3. Roof Aerodynamic Blister Spline (Windshield Top to High Roof)
-        # Smooth S-curve transition blister
-        roof_pts = []
-        n_roof_trans = 6
-        for i in range(n_roof_trans):
-            t = i / (n_roof_trans - 1)
-            # Smoothstep interpolation
-            smooth_t = t * t * (3.0 - 2.0 * t)
-            y = (1.0 - t) * y_windshield_top + t * y_roof_blister_peak
-            z = (1.0 - smooth_t) * z_windshield_top + smooth_t * z_roof_high
-            roof_pts.append([0.0, float(y), float(z)])
-
-        # Extend roof back horizontally to rear doors
+        # 3. Roof Aerodynamic Blister Spline (Windshield Top to High Roof) with Cubic S-curve
+        p0_rf = [0.0, y_windshield_top, z_windshield_top]
+        p1_rf = [0.0, y_windshield_top + 0.25 * (y_roof_blister_peak - y_windshield_top), z_windshield_top]
+        p2_rf = [0.0, y_windshield_top + 0.75 * (y_roof_blister_peak - y_windshield_top), z_roof_high]
+        p3_rf = [0.0, y_roof_blister_peak, z_roof_high]
+        roof_blister = eval_cubic_bezier_curve(p0_rf, p1_rf, p2_rf, p3_rf, num_samples=8).tolist()
+        roof_pts = roof_blister
         roof_pts.append([0.0, float(y_rear_doors + 0.2), float(z_roof_high)])
         roof_pts.append([0.0, float(y_rear_doors), float(z_roof_high - 0.04)])
 

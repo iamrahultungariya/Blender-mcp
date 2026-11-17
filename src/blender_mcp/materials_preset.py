@@ -154,13 +154,40 @@ def setup_chrome_trim_material(
     return mat
 
 
+def setup_specular_clay_material(
+    name: str = "M_Studio_Specular_Clay",
+    base_color: Tuple[float, float, float, float] = (0.5, 0.5, 0.5, 1.0),
+    roughness: float = 0.08,
+    clearcoat: float = 1.0
+) -> Any:
+    """Neutral mid-gray high-gloss clearcoat studio clay for diagnosing curvature dents & reflection continuity."""
+    mat = _get_or_create_material(name)
+    bsdf = _find_principled_bsdf(mat)
+    if bsdf:
+        _set_socket_value(bsdf, ["Base Color"], base_color)
+        _set_socket_value(bsdf, ["Roughness"], roughness)
+        _set_socket_value(bsdf, ["Metallic"], 0.0)
+        _set_socket_value(bsdf, ["Coat Weight", "Coat", "Clearcoat"], clearcoat)
+        _set_socket_value(bsdf, ["Coat Roughness", "Clearcoat Roughness"], 0.02)
+        _set_socket_value(bsdf, ["Specular IOR Level", "Specular"], 0.5)
+    return mat
+
+
 class MaterialPresetVault:
     """Factory vault generating material specifications and Blender shader graphs."""
 
     @staticmethod
     def get_material_spec(material_type: str, **kwargs: Any) -> Dict[str, Any]:
         m_type = material_type.lower()
-        if "paint" in m_type:
+        if "specular_clay" in m_type or "clay" in m_type:
+            return {
+                "type": "specular_clay",
+                "base_color": kwargs.get("color", (0.5, 0.5, 0.5, 1.0)),
+                "roughness": kwargs.get("roughness", 0.08),
+                "clearcoat": kwargs.get("clearcoat", 1.0),
+                "metallic": 0.0,
+            }
+        elif "paint" in m_type:
             return {
                 "type": "car_paint",
                 "base_color": kwargs.get("color", (0.95, 0.95, 0.95, 1.0)),
@@ -201,3 +228,4 @@ class MaterialPresetVault:
     setup_emissive = staticmethod(setup_emergency_emissive_material)
     setup_tire = staticmethod(setup_radial_tire_material)
     setup_chrome = staticmethod(setup_chrome_trim_material)
+    setup_specular_clay = staticmethod(setup_specular_clay_material)

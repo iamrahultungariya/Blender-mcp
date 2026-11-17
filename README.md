@@ -150,6 +150,9 @@ The addon starts its server when Blender opens. To check, press `N` in the 3D vi
 ## Table of Contents
 
 - [Quickstart](#quickstart)
+- [Rahul 3D Engine — Autonomous Production Capabilities](#rahul-3d-engine--autonomous-production-capabilities)
+  - [The 9 Major Production Systems](#the-9-major-production-systems)
+  - [FastMCP Tool Directory (69 Total Tools)](#rahul-3d-engine-fastmcp-tool-directory-69-total-tools)
 - [Features](#features)
 - [Premium](#premium)
 - [Components](#components)
@@ -184,6 +187,123 @@ The addon starts its server when Blender opens. To check, press `N` in the 3D vi
 - [Contributing](#contributing)
 - [Disclaimer](#disclaimer)
 - [Star History](#star-history)
+
+---
+
+## Rahul 3D Engine — Autonomous Production Capabilities
+
+**Rahul 3D Engine** upgrades Blender MCP into a professional, autonomous 3D engineering and scene creation system. It combines deep computational geometry, procedural PBR shading, calibrated studio lighting, sensor-aware camera framing, automated mesh repair, cloth physics, surface raycast placement, modifier stack management, and mechanical rigging under unified FastMCP orchestration.
+
+### The 9 Major Production Systems
+
+#### 1. PBR Material & Procedural Shader Engine
+- **Principled BSDF Version-Aware Compatibility**: Automatically resolves socket naming variations across Blender 3.6 LTS, 4.2 LTS, and 5.2 LTS (`Base Color`, `Roughness`, `Metallic`, `Coat`, `Transmission`, `Emission`).
+- **15 Built-in Procedural Shaders**: `wood`, `brushed_metal`, `polished_metal`, `concrete`, `marble`, `leather`, `fabric_weave`, `plastic`, `ceramic`, `rubber`, `painted_wall`, `aged_wood`, `rusted_metal`, `stone`, `glass`.
+- **Tools**:
+  - `assign_pbr_material(object_name, material_name, base_color, metallic, roughness, alpha, emission_color, emission_strength, normal_strength, assign_mode)`
+  - `inspect_material_nodes(material_name, include_links, include_node_properties)`
+  - `create_procedural_shader(object_name, preset, material_name, scale, roughness, color1, color2, bump_strength)`
+  - `modify_material_property(material_name, property_name, value)`
+  - `validate_material_setup(material_name)`
+
+#### 2. Cinematic Studio Lighting & HDRI Engine
+- **10 Calibrated Studio Lighting Rigs**: `three_point`, `dramatic_rim`, `soft_interior`, `product_clean`, `cinematic`, `architectural`, `horror_atmosphere`, `daylight`, `night_scene`, `automotive_studio`.
+- **Dynamic Bounding-Box Scaling**: Automatically calculates light distances, target tracking, and Wattage energy scaling proportional to target asset volume.
+- **Kelvin-to-RGB Temperature Balancing**: Accurate blackbody simulation from 1,800K candle flames to 9,000K daylight.
+- **Tools**:
+  - `setup_studio_lighting(preset, target_object, energy_multiplier, color_temperature, shadow_quality, world_strength, collection_name)`
+  - `setup_environment_hdri(hdri_path_or_preset, strength, rotation, background_visibility)`
+  - `inspect_lighting_setup(collection_name)`
+  - `adjust_lighting_for_object(target_object, collection_name, energy_multiplier)`
+
+#### 3. Camera Framing, Composition & Depth of Field Engine
+- **Trigonometric Sensor & Aspect-Ratio Math**: Mathematically precise camera distances ($D = \frac{R \cdot M}{\sin(\text{FOV}/2)}$) avoiding clipping and framing cutoffs.
+- **11 Canonical Camera Angles**: `front`, `back`, `left`, `right`, `top`, `bottom`, `three_quarters`, `isometric`, `hero`, `low_angle`, `high_angle`.
+- **Cinematic Framing Offsets**: `center`, `rule_of_thirds`, `cinematic`, `product_hero`, `architectural`.
+- **Turntable Orbit Animation**: Automated 360-degree turntable keyframing with TrackTo empty targeting.
+- **Tools**:
+  - `frame_camera_to_object(object_name, lens_mm, angle, margin, camera_name, composition)`
+  - `setup_camera_dof(target_object, f_stop, focus_distance, enabled, camera_name)`
+  - `create_turntable_camera(target_object, frames, height, radius, start_frame, end_frame, camera_name)`
+  - `inspect_camera_setup(camera_name)`
+
+#### 4. Automated Mesh Repair, Remeshing & Decimation
+- **Watertight Mesh Sanitization**: Merges duplicate vertices, dissolves degenerate zero-area faces, deletes loose elements, and recalculates normals.
+- **QuadriFlow Quadrilateral Remeshing**: Reconstructs chaotic scan or boolean topology into clean quad-flow patches.
+- **LOD Chain Generation**: Generates 4-tier game LODs (`LOD0` 100%, `LOD1` 50%, `LOD2` 25%, `LOD3` 12.5%) with UV and boundary preservation.
+- **Tools**:
+  - `repair_mesh_topology(object_name, remove_doubles, remove_loose, fix_normals, dissolve_degenerate, merge_distance)`
+  - `decimate_mesh(object_name, target_ratio, preserve_uvs, preserve_symmetry, triangulate, apply_modifier)`
+  - `quad_remesh(object_name, target_quads, preserve_symmetry, preserve_sharp, preserve_boundary, adaptive_size)`
+  - `generate_lod_chain(object_name, lod_ratios, collection_name)`
+
+#### 5. Cloth Simulation & Draping Physics Engine
+- **Headless Non-Modal Simulation**: Steps physical frames iteratively via `scene.frame_set()` without requiring a blocking Blender UI window.
+- **Presets & Fabric Tuning**: Calibrated tension, compression, shear, and bending parameters for silk, cotton, denim, leather, and rubber.
+- **Evaluated Mesh Freezing**: Extracts deformed fabric mesh from evaluated dependency graph into clean, static geometry.
+- **Tools**:
+  - `setup_cloth_physics(cloth_object, preset, mass, tension, compression, shear, bending, damping, quality_steps)`
+  - `bake_cloth_drop(cloth_object, collision_objects, steps, pin_boundary, apply_result)`
+  - `inspect_cloth_simulation(cloth_object)`
+
+#### 6. Raycast Surface Placement & Instancing Engine
+- **Bounding-Box Raycast Snapping**: Casts bottom-to-surface rays to set props flush onto target surfaces without intersection.
+- **Surface Normal Alignment**: Reorients object Z-axis to align with local surface normal vectors.
+- **Zero-Memory Shared Mesh Instancing**: Instances master meshes (`obj.data = master_mesh`, mirroring `Alt+D`) with Poisson disk spacing and random scale/rotation jitter.
+- **Tools**:
+  - `snap_to_surface(object_name, target_surface_name, offset, alignment_mode, ray_direction)`
+  - `align_object_to_surface(object_name, target_surface_name)`
+  - `scatter_instances(collection_name, target_surface, count, random_rotation, random_scale, min_distance, distribution, seed)`
+  - `inspect_scatter_result(target_surface)`
+
+#### 7. Scene Checkpoint & Safety System (Safe Mode Rollback)
+- **Non-Destructive `.blend` Snapshots**: Saves background compressed snapshots to `.checkpoints/` with ISO metadata tracking.
+- **Instant Rollback**: Restores previous scene states in milliseconds if an operation produces non-manifold topology, self-intersections, or corrupt geometry.
+- **Tools**:
+  - `create_scene_checkpoint(label, description)`
+  - `restore_scene_checkpoint(checkpoint_id)`
+  - `list_scene_checkpoints(limit)`
+  - `delete_scene_checkpoint(checkpoint_id)`
+
+#### 8. Declarative Modifier Stack Engine
+- **Ordered Modifier Pipeline**: Declarative validation and ordering (`MIRROR` -> `BEVEL` -> `SUBSURF`).
+- **Selective Freezing**: Safely applies target modifiers into static mesh data with automated pre-flight backup.
+- **Tools**:
+  - `apply_modifier_stack(object_name, stack, apply_immediately)`
+  - `inspect_modifier_stack(object_name)`
+  - `freeze_modifiers(object_name, modifier_names, create_backup)`
+
+#### 9. Mechanical & Vehicle Rigging Engine
+- **Automated Vehicle Empties Hierarchy**: Establishes `Root` -> `Chassis` -> `Steer_FL/FR` -> `Wheel` transform empties.
+- **Architectural & Furniture Hinges**: Configures Limit Rotation constraints for doors, windows, lids, and drawers with customizable angle stops.
+- **Mechanical Pivot Offsets**: Shifts object origin to hinge or axle lines without vertex distortion.
+- **Tools**:
+  - `setup_vehicle_rig(chassis_obj, wheel_objs, steering_wheels, suspension_enabled, rig_name)`
+  - `setup_hinge_constraint(door_obj, frame_obj, axis, limits, hinge_position, constraint_type)`
+  - `setup_mechanical_pivot(object_name, pivot_location, parent_name)`
+  - `inspect_rig_hierarchy(root_obj)`
+
+---
+
+### Rahul 3D Engine FastMCP Tool Directory (89+ Total Tools)
+
+| System Domain | Tool Count | Tools Included |
+| :--- | :--- | :--- |
+| **Layered Thinking & Critic (V4)** | 3 | `decompose_scene_intent`, `validate_aesthetic_quality`, `audit_production_readiness` |
+| **Nature & Organic Environments (V3.3)** | 4 | `create_grass_blade_cluster`, `create_grass_field`, `create_terrain_ground`, `scatter_foliage` |
+| **Cloth Sim & Assembly Settling (V3.3)** | 4 | `simulate_cloth_assembly`, `setup_cloth_physics`, `bake_cloth_drop`, `inspect_cloth_simulation` |
+| **Soft Goods & Drapery (V3.1)** | 5 | `create_pillow`, `create_curtains`, `create_duvet`, `create_blanket`, `create_tufted_surface` |
+| **AAA Edge Conditioning (V3.1)** | 1 | `apply_edge_conditioning` |
+| **Furniture & Assemblies (V3.2)** | 6 | `create_bed`, `create_sofa`, `create_chair`, `create_table`, `create_wardrobe`, `create_door_assembly` |
+| **PBR Material & Shaders** | 5 | `assign_pbr_material`, `inspect_material_nodes`, `create_procedural_shader`, `modify_material_property`, `validate_material_setup` |
+| **Cinematic Studio Lighting & HDRI** | 4 | `setup_studio_lighting`, `setup_environment_hdri`, `inspect_lighting_setup`, `adjust_lighting_for_object` |
+| **Camera & Turntable** | 4 | `frame_camera_to_object`, `setup_camera_dof`, `create_turntable_camera`, `inspect_camera_setup` |
+| **Topology Repair & LOD** | 4 | `repair_mesh_topology`, `decimate_mesh`, `quad_remesh`, `generate_lod_chain` |
+| **Surface Placement & Instancing** | 4 | `snap_to_surface`, `align_object_to_surface`, `scatter_instances`, `inspect_scatter_result` |
+| **Checkpoints & Safe Mode** | 4 | `create_scene_checkpoint`, `restore_scene_checkpoint`, `list_scene_checkpoints`, `delete_scene_checkpoint` |
+| **Modifier Stack Automation** | 3 | `apply_modifier_stack`, `inspect_modifier_stack`, `freeze_modifiers` |
+| **Mechanical & Vehicle Rigging** | 4 | `setup_vehicle_rig`, `setup_hinge_constraint`, `setup_mechanical_pivot`, `inspect_rig_hierarchy` |
+| **Core & Computational Geometry** | 38 | `get_addon_status`, `execute_blender_code`, `get_scene_info`, `search_assets`, `import_asset`, `generate_3d`, `look`, `inspect_asset`, `record_trajectory_feedback`, `ptlas_create_partition`, `ptlas_mutate_partition`, `ptlas_verify_integrity`, `sdf_space_carve`, `clas_eval_bezier_patch`, `clas_loft_splines`, `clas_boolean_carve`, `gbuffer_quad_capture`, `gbuffer_project_uv`, `pbr_compile_curvature_ao`, `export_game_asset`, `apply_uv_unwrap`, `create_bezier_tube`, `setup_subdivision_cage`, `crop_reference_region`, `get_component_tree`, `audit_mesh_topology`, `inspect_specular_clay_pass`, `get_evaluated_budget_report`, `reconcile_reference_datums`, `validate_phase_gate`, `get_pipeline_status`, `generate_spatial_blueprint`, `create_cushioned_profile`, `create_architectural_wall`, `create_profile_sweep_molding`, etc. |
 
 ---
 

@@ -1,0 +1,94 @@
+{
+  "version": 2,
+  "saved_at": 1794552290.8973098,
+  "phases": {
+    "1": {
+      "phase_id": 1,
+      "name": "Multi-View Reference Intake & Datum Alignment",
+      "status": "PASS",
+      "verified_at": 1794552290.8507373,
+      "evidence": {
+        "datums_reconciled": true,
+        "evidence_matrix": {
+          "length": 4.5,
+          "width": 4.0,
+          "height": 2.8,
+          "baseboard_height": 0.1,
+          "crown_molding_height": 0.07,
+          "ceiling_drop": 0.12,
+          "wall_thickness": 0.12,
+          "door_casing_width": 0.08,
+          "cove_recess_depth": 0.04
+        }
+      },
+      "notes": ""
+    },
+    "2": {
+      "phase_id": 2,
+      "name": "Component Breakdown & Modeling Strategy Selection",
+      "status": "PASS",
+      "verified_at": 1794552290.8967996,
+      "evidence": {
+        "component_strategies": {
+          "hero_bed_winged": "subdivision_cage",
+          "floating_nightstands": "boolean_bevel",
+          "ottoman_bench": "subdivision_cage",
+          "lounge_tub_chair": "bezier_curve",
+          "media_entertainment_wall": "boolean_bevel",
+          "bronze_glass_wardrobe": "boolean_bevel",
+          "window_drapery_system": "subdivision_cage",
+          "architectural_envelope": "boolean_bevel",
+          "halo_ring_chandelier": "bezier_curve"
+        },
+        "blueprint_dimensions": {
+          "length": 4.5,
+          "width": 4.0,
+          "height": 2.8,
+          "baseboard_height": 0.1,
+          "crown_molding_height": 0.07,
+          "ceiling_drop": 0.12,
+          "wall_thickness": 0.12,
+          "door_casing_width": 0.08,
+          "cove_recess_depth": 0.04
+        },
+        "cushion_loft_verified": true,
+        "zero_unfilleted_primitives": true,
+        "prefabs_count": 9,
+        "total_triangles": 14188
+      },
+      "notes": ""
+    },
+    "3": {
+      "phase_id": 3,
+      "name": "Primary Form Sub-D Cage & Visual Hull Carving",
+      "status": "NOT_STARTED",
+      "verified_at": null,
+      "evidence": {},
+      "notes": ""
+    },
+    "4": {
+      "phase_id": 4,
+      "name": "Secondary Assemblies & Precision Cutouts",
+      "status": "NOT_STARTED",
+      "verified_at": null,
+      "evidence": {},
+      "notes": ""
+    },
+    "5": {
+      "phase_id": 5,
+      "name": "Detailing, Mechanical Hardware & Accessories",
+      "status": "NOT_STARTED",
+      "verified_at": null,
+      "evidence": {},
+      "notes": ""
+    },
+    "6": {
+      "phase_id": 6,
+      "name": "Multi-Material PBR Shading, Decals & Studio QA Gate",
+      "status": "NOT_STARTED",
+      "verified_at": null,
+      "evidence": {},
+      "notes": ""
+    }
+  }
+}

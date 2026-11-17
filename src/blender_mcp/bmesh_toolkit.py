@@ -1053,6 +1053,9 @@ def create_cushioned_profile(
     thickness: float,
     crown_height: float = 0.04,
     segments: int = 12,
+    pinch_corners: bool = False,
+    welt_depth: float = 0.0,
+    tufting_grid: Optional[Tuple[int, int]] = None,
     bm: Any = None
 ) -> dict:
     """Generate organic, puffed quad cushion mesh with double-parabolic crown curvature.
@@ -1061,11 +1064,48 @@ def create_cushioned_profile(
     Z_top(u, v) = +thickness/2 + crown_height * (1 - u^2) * (1 - v^2)
     Z_bot(u, v) = -thickness/2 - crown_height * (1 - u^2) * (1 - v^2)
     where u, v in [-1, 1].
+
+    Also supports:
+    - Corner pinching (pinch_corners=True) for realistic stitched pillow ear pinches.
+    - Welt seam piping (welt_depth > 0) around equatorial seam.
+    - Deep button tufting indentations (tufting_grid=(rows, cols)).
     """
     nx = max(2, int(segments))
     ny = max(2, int(segments))
 
+    # Precalculate tuft points in (u, v) space if requested
+    tuft_points = []
+    if tufting_grid and len(tufting_grid) == 2:
+        t_rows, t_cols = max(1, int(tufting_grid[0])), max(1, int(tufting_grid[1]))
+        for tr in range(t_rows):
+            v_t = -0.7 + 1.4 * (tr / max(1, t_rows - 1)) if t_rows > 1 else 0.0
+            for tc in range(t_cols):
+                u_t = -0.7 + 1.4 * (tc / max(1, t_cols - 1)) if t_cols > 1 else 0.0
+                tuft_points.append((u_t, v_t))
+
     verts: List[List[float]] = []
+
+    def _calc_z_displacement(u_coord: float, v_coord: float, is_top: bool) -> float:
+        # Base double-parabolic crown
+        crown = crown_height * (1.0 - u_coord ** 2) * (1.0 - v_coord ** 2)
+        base_z = (thickness / 2.0) + crown
+
+        # Corner pinch: pinch corners inward toward equator seam
+        if pinch_corners:
+            u_p = max(0.0, (abs(u_coord) - 0.4) / 0.6)
+            v_p = max(0.0, (abs(v_coord) - 0.4) / 0.6)
+            pinch_factor = u_p * v_p
+            base_z = base_z * (1.0 - 0.65 * pinch_factor)
+
+        # Tufting indentation: depressions toward center
+        if tuft_points:
+            tuft_depth = min(thickness * 0.4, 0.04)
+            for u_t, v_t in tuft_points:
+                dist_sq = (u_coord - u_t) ** 2 + (v_coord - v_t) ** 2
+                indent = tuft_depth * math.exp(-dist_sq / 0.04)
+                base_z -= indent
+
+        return base_z if is_top else -base_z
 
     # Top grid: index offset 0 .. (nx+1)*(ny+1) - 1
     top_indices = {}
@@ -1076,7 +1116,7 @@ def create_cushioned_profile(
         for i in range(nx + 1):
             u_coord = 2.0 * (i / nx) - 1.0
             x = -width / 2.0 + (i / nx) * width
-            z = (thickness / 2.0) + crown_height * (1.0 - u_coord ** 2) * (1.0 - v_coord ** 2)
+            z = _calc_z_displacement(u_coord, v_coord, is_top=True)
             verts.append([float(x), float(y), float(z)])
             top_indices[(i, j)] = idx
             idx += 1
@@ -1089,7 +1129,7 @@ def create_cushioned_profile(
         for i in range(nx + 1):
             u_coord = 2.0 * (i / nx) - 1.0
             x = -width / 2.0 + (i / nx) * width
-            z = -(thickness / 2.0) - crown_height * (1.0 - u_coord ** 2) * (1.0 - v_coord ** 2)
+            z = _calc_z_displacement(u_coord, v_coord, is_top=False)
             verts.append([float(x), float(y), float(z)])
             bottom_indices[(i, j)] = idx
             idx += 1
@@ -1147,6 +1187,25 @@ def create_cushioned_profile(
         b1 = bottom_indices[(0, j + 1)]
         faces.append([t1, t0, b0, b1])
 
+    # Optional welt piping seam extrusion around equator perimeter
+    has_welt = (welt_depth > 0.0)
+    if has_welt:
+        # Scale perimeter vertices outward slightly for welt ridge
+        for i in range(nx + 1):
+            for j in [0, ny]:
+                for idx_pt in [top_indices[(i, j)], bottom_indices[(i, j)]]:
+                    norm = math.hypot(verts[idx_pt][0], verts[idx_pt][1])
+                    if norm > 1e-6:
+                        verts[idx_pt][0] += (verts[idx_pt][0] / norm) * (welt_depth * 0.5)
+                        verts[idx_pt][1] += (verts[idx_pt][1] / norm) * (welt_depth * 0.5)
+        for j in range(ny + 1):
+            for i in [0, nx]:
+                for idx_pt in [top_indices[(i, j)], bottom_indices[(i, j)]]:
+                    norm = math.hypot(verts[idx_pt][0], verts[idx_pt][1])
+                    if norm > 1e-6:
+                        verts[idx_pt][0] += (verts[idx_pt][0] / norm) * (welt_depth * 0.5)
+                        verts[idx_pt][1] += (verts[idx_pt][1] / norm) * (welt_depth * 0.5)
+
     max_z = float(np.max([v[2] for v in verts]))
 
     if HAS_BPY:
@@ -1171,7 +1230,11 @@ def create_cushioned_profile(
         "depth": depth,
         "thickness": thickness,
         "crown_height": crown_height,
+        "pinch_corners": pinch_corners,
+        "has_welt": has_welt,
+        "tufting_points": len(tuft_points),
         "verts": verts,
+        "vertices": verts,
         "faces": faces,
     }
 

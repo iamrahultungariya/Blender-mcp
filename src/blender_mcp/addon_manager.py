@@ -22,14 +22,13 @@ logger = logging.getLogger("BlenderMCPServer")
 # Must match ADDON_PROTOCOL_VERSION in addon.py / bundled/addon.py
 EXPECTED_ADDON_PROTOCOL_VERSION = 15
 
-_ADDON_MARKER = 'bl_info = {\n    "name": "MCP for Blender"'
+_ADDON_MARKER = 'bl_info = {\n    "name": "Rahul 3D Engine"'
 _INSTALLED_FILENAME = "blender_mcp.py"
 _PROTOCOL_RE = re.compile(r"ADDON_PROTOCOL_VERSION\s*=\s*(\d+)")
 _BL_INFO_VERSION_RE = re.compile(r'"version":\s*\((\d+)\s*,\s*(\d+)(?:\s*,\s*(\d+))?\s*\)')
-# Matches the current name and the pre-rename "Blender MCP" so install-addon
-# still replaces installs from older releases.
+# Matches Rahul 3D Engine, the upstream MCP for Blender, and pre-rename Blender MCP.
 _BL_INFO_NAME_RE = re.compile(
-    r"""["']name["']\s*:\s*["'](?:MCP for Blender|Blender MCP)["']"""
+    r"""["']name["']\s*:\s*["'](?:Rahul 3D Engine|MCP for Blender|Blender MCP)["']"""
 )
 
 
